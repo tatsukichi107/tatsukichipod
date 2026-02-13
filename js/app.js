@@ -1,12 +1,15 @@
 /* =========================================================
- * app.js（v0.73：ヘッダー3行の確実反映＋モーダル文言変更）
+ * app.js（完全版・復旧用 v0.75）
  *
- * 今回の変更点：
- * - ヘッダー3行（#headerLine1/2/3）に必ず反映されるよう setHeader() を整理
- * - ニックネーム未設定は「未登録」
- * - カムバックモーダルのボタン文言はHTML側で変更済みの前提（IDは据え置き）
+ * 目的：
+ * - 「端末によって無反応」「スプライト/スライダー表示が消える」事故を、
+ *   app.js 側でも落ちにくくして復旧しやすくする。
  *
- * それ以外は既存挙動を維持
+ * 変更点（安全策）：
+ * - DOM取得の欠落を早期検知して alert（無反応防止）
+ * - TSP_STATE/TSP_GAME 未定義を早期検知して alert
+ * - 既存仕様は維持（育成・環境・表情・カムバック・短縮コード）
+ * - カムバックモーダル文言は HTML 側で変更済み（ID据え置き）
  * ========================================================= */
 
 (function () {
@@ -14,9 +17,23 @@
 
   const $ = (id) => document.getElementById(id);
 
+  function must(id) {
+    const el = $(id);
+    if (!el) throw new Error(`DOM missing: #${id}`);
+    return el;
+  }
+
+  function assertDeps() {
+    if (!window.TSP_STATE) throw new Error("TSP_STATE is undefined (state.js not loaded?)");
+    if (!window.TSP_GAME) throw new Error("TSP_GAME is undefined (game.js not loaded?)");
+    if (!window.TSP_GAME.TEMP_STEPS || !window.TSP_GAME.HUM_STEPS) {
+      throw new Error("TSP_GAME steps missing (TEMP_STEPS / HUM_STEPS)");
+    }
+  }
+
   // ===== DOM =====
   let startView, mainView;
-  let headerSub, headerLine1, headerLine2, headerLine3;
+  let headerLine1, headerLine2, headerLine3;
 
   let sagaInput, newSoulBtn, soulTextInput, textRebornBtn;
 
@@ -108,18 +125,14 @@
     return nick ? nick : "未登録";
   }
 
-  // ====== ★ ヘッダー3行更新（確実版） ======
+  // ===== Header (3 lines) =====
   function setHeader() {
-    const has3 = headerLine1 && headerLine2 && headerLine3;
+    if (!headerLine1 || !headerLine2 || !headerLine3) return;
 
     if (!soul) {
-      if (has3) {
-        headerLine1.textContent = "";
-        headerLine2.textContent = "";
-        headerLine3.textContent = "未リボーン";
-      } else if (headerSub) {
-        headerSub.textContent = "未リボーン";
-      }
+      headerLine1.textContent = "";
+      headerLine2.textContent = "";
+      headerLine3.textContent = "未リボーン";
       return;
     }
 
@@ -127,13 +140,9 @@
     const sp = String(soul.speciesName || "").trim();
     const nick = displayNicknameLocal(soul);
 
-    if (has3) {
-      headerLine1.textContent = `サーガ名：${saga}`;
-      headerLine2.textContent = `種族名：${sp} / ニックネーム：${nick}`;
-      headerLine3.textContent = "リボーン中";
-    } else if (headerSub) {
-      headerSub.textContent = `サーガ名：${saga}\n種族名：${sp} / ニックネーム：${nick}\nリボーン中`;
-    }
+    headerLine1.textContent = `サーガ名：${saga}`;
+    headerLine2.textContent = `種族名：${sp} / ニックネーム：${nick}`;
+    headerLine3.textContent = "リボーン中";
   }
 
   function setHomeBackgroundByEnvAttr(envAttr) {
@@ -223,7 +232,6 @@
   }
 
   function updateLightLabelByHumidity() {
-    if (!lightLabel) return;
     lightLabel.textContent = (Number(envDraft.hum) === 100) ? "水深" : "光量";
   }
 
@@ -231,7 +239,6 @@
     tempValue.textContent = `${envDraft.temp}℃`;
     humidityValue.textContent = `${envDraft.hum}％`;
     lightValue.textContent = `${envDraft.light}`;
-
     updateLightLabelByHumidity();
 
     const attr = window.TSP_GAME.envAttribute(envDraft.temp, envDraft.hum);
@@ -324,7 +331,6 @@
     }
   }
 
-  // Rank mapping
   function renderByCurrentEnv(dtSec) {
     if (!soul) return;
 
@@ -490,7 +496,7 @@
     }
   }
 
-  // 「カムバックする」＝イジェクト（未リボーンへ）
+  // 「カムバックする」＝未リボーンへ
   function eject() {
     closeSoulModal();
     soul = null;
@@ -498,7 +504,7 @@
     show(startView);
   }
 
-  // 「育成に戻る」＝モーダル閉じて継続
+  // 「育成に戻る」＝続行
   function cancelComeback() {
     closeSoulModal();
   }
@@ -543,8 +549,8 @@
 
       soul = window.TSP_STATE.newSoulWindragon(saga);
 
-      envDraft = { ...soul.envSetting };
-      envApplied = { ...soul.envSetting };
+      envDraft = { ...(soul.envSetting || { temp: 0, hum: 50, light: 50 }) };
+      envApplied = { ...envDraft };
 
       secondsAccum = 0;
       lastRafMs = null;
@@ -630,78 +636,62 @@
 
     copySoulBtn.addEventListener("click", copySoulCode);
     ejectBtn.addEventListener("click", eject);
-    if (cancelComebackBtn) cancelComebackBtn.addEventListener("click", cancelComeback);
+    cancelComebackBtn.addEventListener("click", cancelComeback);
   }
 
   // ===== Boot =====
   function boot() {
-    startView = $("startView");
-    mainView = $("mainView");
+    try {
+      assertDeps();
 
-    headerSub = $("headerSub");
-    headerLine1 = $("headerLine1");
-    headerLine2 = $("headerLine2");
-    headerLine3 = $("headerLine3");
+      startView = must("startView");
+      mainView = must("mainView");
 
-    sagaInput = $("sagaInput");
-    newSoulBtn = $("newSoulBtn");
-    soulTextInput = $("soulTextInput");
-    textRebornBtn = $("textRebornBtn");
+      headerLine1 = must("headerLine1");
+      headerLine2 = must("headerLine2");
+      headerLine3 = must("headerLine3");
 
-    tabBtns = Array.from(document.querySelectorAll(".tab-btn"));
-    tabEls = {
-      home: $("tab-home"),
-      environment: $("tab-environment"),
-      legendz: $("tab-legendz"),
-      crystal: $("tab-crystal"),
-    };
+      sagaInput = must("sagaInput");
+      newSoulBtn = must("newSoulBtn");
+      soulTextInput = must("soulTextInput");
+      textRebornBtn = must("textRebornBtn");
 
-    envAttributeLabel = $("envAttributeLabel");
-    growthTimer = $("growthTimer");
-    growthPreview = $("growthPreview");
-    comebackBtn = $("comebackBtn");
+      tabBtns = Array.from(document.querySelectorAll(".tab-btn"));
+      tabEls = {
+        home: must("tab-home"),
+        environment: must("tab-environment"),
+        legendz: must("tab-legendz"),
+        crystal: must("tab-crystal"),
+      };
 
-    spriteViewport = $("spriteViewport");
-    spriteSheetLayer = $("spriteSheetLayer");
-    spriteFxLayer = $("spriteFxLayer");
+      envAttributeLabel = must("envAttributeLabel");
+      growthTimer = must("growthTimer");
+      growthPreview = must("growthPreview");
+      comebackBtn = must("comebackBtn");
 
-    tempSlider = $("tempSlider");
-    humiditySlider = $("humiditySlider");
-    lightSlider = $("lightSlider");
-    tempValue = $("tempValue");
-    humidityValue = $("humidityValue");
-    lightValue = $("lightValue");
-    lightLabel = $("lightLabel");
-    envPreviewLabel = $("envPreviewLabel");
-    neutralBtn = $("neutralBtn");
-    applyEnvBtn = $("applyEnvBtn");
+      spriteViewport = must("spriteViewport");
+      spriteSheetLayer = must("spriteSheetLayer");
+      spriteFxLayer = must("spriteFxLayer");
 
-    speciesName = $("speciesName");
-    nicknameInput = $("nicknameInput");
-    nicknameApplyBtn = $("nicknameApplyBtn");
-    legendzAttribute = $("legendzAttribute");
-    hpStat = $("hpStat");
-    magicStat = $("magicStat");
-    counterStat = $("counterStat");
-    strikeStat = $("strikeStat");
-    healStat = $("healStat");
+      tempSlider = must("tempSlider");
+      humiditySlider = must("humiditySlider");
+      lightSlider = must("lightSlider");
+      tempValue = must("tempValue");
+      humidityValue = must("humidityValue");
+      lightValue = must("lightValue");
+      lightLabel = must("lightLabel");
+      envPreviewLabel = must("envPreviewLabel");
+      neutralBtn = must("neutralBtn");
+      applyEnvBtn = must("applyEnvBtn");
 
-    crystalList = $("crystalList");
+      speciesName = must("speciesName");
+      nicknameInput = must("nicknameInput");
+      nicknameApplyBtn = must("nicknameApplyBtn");
+      legendzAttribute = must("legendzAttribute");
+      hpStat = must("hpStat");
+      magicStat = must("magicStat");
+      counterStat = must("counterStat");
+      strikeStat = must("strikeStat");
+      healStat = must("healStat");
 
-    soulModal = $("soulModal");
-    modalSoulText = $("modalSoulText");
-    copySoulBtn = $("copySoulBtn");
-    ejectBtn = $("ejectBtn");
-    cancelComebackBtn = $("cancelComebackBtn");
-
-    show(startView);
-    setHeader();
-
-    initSliders();
-    envDraft = { temp: 0, hum: 50, light: 50 };
-    envApplied = { ...envDraft };
-    setSlidersFromDraft();
-    refreshEnvUI();
-
-    bindEvents();
-    requestAnimationFrame(rafLoop);
+      crysta
