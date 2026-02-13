@@ -1,12 +1,12 @@
 /* =========================================================
- * app.js（v0.72：ヘッダー3行対応）
+ * app.js（v0.73：ヘッダー3行の確実反映＋モーダル文言変更）
  *
  * 今回の変更点：
- * - ヘッダー下部の表示を 3行（サーガ名 / 種族名orニックネーム / リボーン状態）に対応
- * - 既存の #headerSub.textContent を使わず、
- *   #headerLine1 #headerLine2 #headerLine3 を更新する
+ * - ヘッダー3行（#headerLine1/2/3）に必ず反映されるよう setHeader() を整理
+ * - ニックネーム未設定は「未登録」
+ * - カムバックモーダルのボタン文言はHTML側で変更済みの前提（IDは据え置き）
  *
- * それ以外（育成ロジック/環境/スプライト/カムバック等）はノータッチ想定
+ * それ以外は既存挙動を維持
  * ========================================================= */
 
 (function () {
@@ -105,13 +105,11 @@
 
   function displayNicknameLocal(s) {
     const nick = String(s.nickname || "").trim();
-    if (!nick) return "未登録";
-    return nick;
+    return nick ? nick : "未登録";
   }
 
-  // ====== ★ ヘッダー3行更新 ======
+  // ====== ★ ヘッダー3行更新（確実版） ======
   function setHeader() {
-    // fallback（古いHTMLでも落ちないように）
     const has3 = headerLine1 && headerLine2 && headerLine3;
 
     if (!soul) {
@@ -125,16 +123,16 @@
       return;
     }
 
-    const saga = soul.sagaName || "";
+    const saga = String(soul.sagaName || "").trim();
+    const sp = String(soul.speciesName || "").trim();
     const nick = displayNicknameLocal(soul);
-    const sp = soul.speciesName || "";
 
     if (has3) {
       headerLine1.textContent = `サーガ名：${saga}`;
       headerLine2.textContent = `種族名：${sp} / ニックネーム：${nick}`;
       headerLine3.textContent = "リボーン中";
     } else if (headerSub) {
-      headerSub.textContent = `サーガ名：${saga} / ニックネーム：${nick} / リボーン中`;
+      headerSub.textContent = `サーガ名：${saga}\n種族名：${sp} / ニックネーム：${nick}\nリボーン中`;
     }
   }
 
@@ -492,6 +490,7 @@
     }
   }
 
+  // 「カムバックする」＝イジェクト（未リボーンへ）
   function eject() {
     closeSoulModal();
     soul = null;
@@ -499,8 +498,9 @@
     show(startView);
   }
 
+  // 「育成に戻る」＝モーダル閉じて継続
   function cancelComeback() {
-    closeSoulModal(); // ゲーム継続
+    closeSoulModal();
   }
 
   // ===== Tick loop =====
@@ -705,6 +705,3 @@
 
     bindEvents();
     requestAnimationFrame(rafLoop);
-  }
-
-  if (
