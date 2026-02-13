@@ -1,8 +1,6 @@
 /* =========================================================
-   タリスポッド - app.css（v0.71 UI改善：環境タブ配置＆モーダル）
+   タリスポッド - app.css（UI調整：スライダー大型化＋中央寄せ）
    ========================================================= */
-
-/* ========= 基本レイアウト ========= */
 
 * { box-sizing: border-box; }
 
@@ -49,29 +47,29 @@ body {
 
 label {
   display: block;
-  font-size: 13px;
-  margin-bottom: 4px;
+  font-size: 14px;
+  margin-bottom: 6px;
 }
 
 input[type="text"], textarea {
   width: 100%;
-  padding: 8px;
-  border-radius: 8px;
+  padding: 10px;
+  border-radius: 10px;
   border: none;
-  font-size: 14px;
+  font-size: 15px;
 }
 
 textarea {
-  min-height: 80px;
+  min-height: 90px;
   resize: vertical;
 }
 
 button {
   width: 100%;
-  padding: 10px;
-  margin-top: 8px;
+  padding: 12px;
+  margin-top: 10px;
   border: none;
-  border-radius: 10px;
+  border-radius: 12px;
   cursor: pointer;
   font-weight: bold;
   background: #1f2937;
@@ -90,7 +88,6 @@ hr {
   border: 1px solid #374151;
 }
 
-/* hidden */
 .hidden { display: none !important; }
 
 /* ========= タブ本文の表示制御 ========= */
@@ -189,43 +186,81 @@ hr {
 .attr-storm { background: rgba(59, 130, 246, 0.35); }      /* 青 */
 
 /* =========================================================
-   環境タブ v0.71：無属性ボタン配置
-   - スマホ幅：ボタンを上
-   - 広い幅：右カラム
+   環境タブ：無属性ボタン配置（縦→広い幅で右カラム）
    ========================================================= */
 
-.env-layout {
-  display: block; /* デフォルトは縦 */
-}
+.env-layout { display: block; }
 
-.env-neutral {
-  margin-bottom: 12px;
-}
+.env-neutral { margin-bottom: 12px; }
 
-/* 画面が広い場合は2カラム */
 @media (min-width: 520px) {
   .env-layout {
     display: flex;
     gap: 16px;
     align-items: flex-start;
   }
-
   .env-neutral {
-    width: 180px;
+    width: 200px;
     margin-bottom: 0;
     flex: 0 0 auto;
   }
+  .env-sliders { flex: 1 1 auto; }
+}
 
-  .env-sliders {
-    flex: 1 1 auto;
-  }
+/* =========================================================
+   スライダー大型化＋中央寄せ（PC/スマホ共通）
+   ========================================================= */
+
+.env-sliders .field {
+  text-align: center; /* ラベルを中央寄せ */
+}
+
+.env-sliders input[type="range"] {
+  width: 90%;
+  margin: 10px auto 0;
+  display: block;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 16px;               /* ← 太くする */
+  border-radius: 999px;
+  background: #374151;
+  outline: none;
+}
+
+/* WebKit（iOS Safari / Chrome） */
+.env-sliders input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 34px;                /* ← つまみ大 */
+  height: 34px;
+  border-radius: 50%;
+  background: #e5e7eb;
+  border: 2px solid #111827;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+  cursor: pointer;
+  margin-top: -9px;           /* トラック中央に合わせる */
+}
+
+/* Firefox */
+.env-sliders input[type="range"]::-moz-range-thumb {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #e5e7eb;
+  border: 2px solid #111827;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+  cursor: pointer;
+}
+
+.env-sliders input[type="range"]::-moz-range-track {
+  height: 16px;
+  border-radius: 999px;
+  background: #374151;
 }
 
 /* =========================================================
    環境ランクエフェクト
    ========================================================= */
-
-/* ===== 超ベスト環境：画面全体派手エフェクト ===== */
 
 .scene.superbest-burst::before {
   content: "";
@@ -245,7 +280,6 @@ hr {
   100% { opacity: 0.9; transform: scale(1.05); }
 }
 
-/* 追加きらめき粒 */
 .superbest-particle {
   position: absolute;
   font-size: 18px;
@@ -260,8 +294,6 @@ hr {
   50%  { transform: translateY(-15px) scale(1.2); }
   100% { transform: translateY(-30px) scale(0.8); opacity: 0; }
 }
-
-/* ===== ベスト・良好：音符のみ ===== */
 
 .fx-note-only {
   position: absolute;
