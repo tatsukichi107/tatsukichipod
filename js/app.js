@@ -1,12 +1,12 @@
 /* =========================================================
- * app.js（短縮コード対応 / QR廃止 / v0.71 UI改善）
+ * app.js（v0.72：ヘッダー3行対応）
  *
- * v0.71 変更点：
- * - 環境タブ：無属性ボタン配置変更（HTML/CSS側）
- * - 表記：「属性プレビュー」→「予想環境」（HTML側）
- * - カムバックモーダル：新ボタン「カムバックをやめる」
- *    - モーダルを閉じてゲーム続行（未リボーンに戻さない）
- * - 湿度=100 のときだけ「光量」→「水深」ラベル切替（既存）
+ * 今回の変更点：
+ * - ヘッダー下部の表示を 3行（サーガ名 / 種族名orニックネーム / リボーン状態）に対応
+ * - 既存の #headerSub.textContent を使わず、
+ *   #headerLine1 #headerLine2 #headerLine3 を更新する
+ *
+ * それ以外（育成ロジック/環境/スプライト/カムバック等）はノータッチ想定
  * ========================================================= */
 
 (function () {
@@ -15,7 +15,9 @@
   const $ = (id) => document.getElementById(id);
 
   // ===== DOM =====
-  let startView, mainView, headerSub;
+  let startView, mainView;
+  let headerSub, headerLine1, headerLine2, headerLine3;
+
   let sagaInput, newSoulBtn, soulTextInput, textRebornBtn;
 
   let tabBtns, tabEls;
@@ -103,17 +105,37 @@
 
   function displayNicknameLocal(s) {
     const nick = String(s.nickname || "").trim();
-    if (!nick) return `${s.speciesName}（ニックネーム未登録）`;
+    if (!nick) return "未登録";
     return nick;
   }
 
+  // ====== ★ ヘッダー3行更新 ======
   function setHeader() {
+    // fallback（古いHTMLでも落ちないように）
+    const has3 = headerLine1 && headerLine2 && headerLine3;
+
     if (!soul) {
-      headerSub.textContent = "未リボーン";
+      if (has3) {
+        headerLine1.textContent = "";
+        headerLine2.textContent = "";
+        headerLine3.textContent = "未リボーン";
+      } else if (headerSub) {
+        headerSub.textContent = "未リボーン";
+      }
       return;
     }
-    headerSub.textContent =
-      `サーガ名：${soul.sagaName} / ニックネーム：${displayNicknameLocal(soul)} / リボーン中`;
+
+    const saga = soul.sagaName || "";
+    const nick = displayNicknameLocal(soul);
+    const sp = soul.speciesName || "";
+
+    if (has3) {
+      headerLine1.textContent = `サーガ名：${saga}`;
+      headerLine2.textContent = `種族名：${sp} / ニックネーム：${nick}`;
+      headerLine3.textContent = "リボーン中";
+    } else if (headerSub) {
+      headerSub.textContent = `サーガ名：${saga} / ニックネーム：${nick} / リボーン中`;
+    }
   }
 
   function setHomeBackgroundByEnvAttr(envAttr) {
@@ -304,6 +326,7 @@
     }
   }
 
+  // Rank mapping
   function renderByCurrentEnv(dtSec) {
     if (!soul) return;
 
@@ -376,32 +399,33 @@
       WALK.turnTimer -= dtSec;
       const flipTurn = (WALK.facing === "right");
       renderFrame(3, flipTurn);
-    } else {
-      const dir = (WALK.facing === "right") ? 1 : -1;
-      WALK.x += WALK.speedPxPerSec * dtSec * dir;
-
-      if (WALK.x > WALK.halfRangePx) {
-        WALK.x = WALK.halfRangePx;
-        WALK.facing = "left";
-        WALK.turnTimer = 0.5;
-        WALK.stepTimer = 0;
-      } else if (WALK.x < -WALK.halfRangePx) {
-        WALK.x = -WALK.halfRangePx;
-        WALK.facing = "right";
-        WALK.turnTimer = 0.5;
-        WALK.stepTimer = 0;
-      }
-
-      WALK.stepTimer += dtSec;
-      if (WALK.stepTimer >= 0.5) {
-        WALK.stepTimer -= 0.5;
-        WALK.stepFrame = (WALK.stepFrame === 1) ? 2 : 1;
-      }
-
-      const flip = (WALK.facing === "right");
-      renderFrame(WALK.stepFrame, flip);
+      spriteViewport.style.left = `calc(50% + ${WALK.x}px)`;
+      return;
     }
 
+    const dir = (WALK.facing === "right") ? 1 : -1;
+    WALK.x += WALK.speedPxPerSec * dtSec * dir;
+
+    if (WALK.x > WALK.halfRangePx) {
+      WALK.x = WALK.halfRangePx;
+      WALK.facing = "left";
+      WALK.turnTimer = 0.5;
+      WALK.stepTimer = 0;
+    } else if (WALK.x < -WALK.halfRangePx) {
+      WALK.x = -WALK.halfRangePx;
+      WALK.facing = "right";
+      WALK.turnTimer = 0.5;
+      WALK.stepTimer = 0;
+    }
+
+    WALK.stepTimer += dtSec;
+    if (WALK.stepTimer >= 0.5) {
+      WALK.stepTimer -= 0.5;
+      WALK.stepFrame = (WALK.stepFrame === 1) ? 2 : 1;
+    }
+
+    const flip = (WALK.facing === "right");
+    renderFrame(WALK.stepFrame, flip);
     spriteViewport.style.left = `calc(50% + ${WALK.x}px)`;
   }
 
@@ -460,7 +484,7 @@
     if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
-      alert("コードをコピーしました");
+      alert("記憶をコピーしました");
     } catch {
       modalSoulText.focus();
       modalSoulText.select();
@@ -475,9 +499,8 @@
     show(startView);
   }
 
-  // ★追加：カムバックをやめる（モーダルを閉じて続行）
   function cancelComeback() {
-    closeSoulModal();
+    closeSoulModal(); // ゲーム継続
   }
 
   // ===== Tick loop =====
@@ -607,8 +630,6 @@
 
     copySoulBtn.addEventListener("click", copySoulCode);
     ejectBtn.addEventListener("click", eject);
-
-    // ★追加
     if (cancelComebackBtn) cancelComebackBtn.addEventListener("click", cancelComeback);
   }
 
@@ -616,7 +637,11 @@
   function boot() {
     startView = $("startView");
     mainView = $("mainView");
+
     headerSub = $("headerSub");
+    headerLine1 = $("headerLine1");
+    headerLine2 = $("headerLine2");
+    headerLine3 = $("headerLine3");
 
     sagaInput = $("sagaInput");
     newSoulBtn = $("newSoulBtn");
@@ -682,9 +707,4 @@
     requestAnimationFrame(rafLoop);
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", boot);
-  } else {
-    boot();
-  }
-})();
+  if (
