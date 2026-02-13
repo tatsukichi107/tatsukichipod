@@ -1,1 +1,323 @@
+/* =========================================================
+   タリスポッド - app.css（v0.71 UI改善：環境タブ配置＆モーダル）
+   ========================================================= */
 
+/* ========= 基本レイアウト ========= */
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: sans-serif;
+  background: #111827;
+  color: #f3f4f6;
+}
+
+#app {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 16px;
+  padding-bottom: 84px; /* 下部タブ分 */
+}
+
+/* ========= ヘッダー ========= */
+
+.header {
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+.title {
+  margin: 0;
+  font-size: 20px;
+}
+
+.header-sub {
+  font-size: 13px;
+  opacity: 0.85;
+  margin-top: 4px;
+}
+
+/* ========= ビュー制御 ========= */
+
+.view { display: none; }
+.view.active { display: block; }
+
+/* ========= 共通UI ========= */
+
+.field { margin-bottom: 14px; }
+
+label {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+input[type="text"], textarea {
+  width: 100%;
+  padding: 8px;
+  border-radius: 8px;
+  border: none;
+  font-size: 14px;
+}
+
+textarea {
+  min-height: 80px;
+  resize: vertical;
+}
+
+button {
+  width: 100%;
+  padding: 10px;
+  margin-top: 8px;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: bold;
+  background: #1f2937;
+  color: #f3f4f6;
+}
+
+button:hover { opacity: 0.92; }
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+hr {
+  margin: 16px 0;
+  border: 1px solid #374151;
+}
+
+/* hidden */
+.hidden { display: none !important; }
+
+/* ========= タブ本文の表示制御 ========= */
+
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+/* ========= タブ（下部固定） ========= */
+
+.tabs {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-width: 480px;
+  margin: 0 auto;
+  display: flex;
+  gap: 6px;
+  padding: 10px;
+  background: rgba(17, 24, 39, 0.95);
+  border-top: 1px solid #374151;
+  z-index: 50;
+}
+
+.tab-btn {
+  flex: 1;
+  margin: 0;
+  background: #1f2937;
+  color: #f3f4f6;
+  padding: 10px 0;
+  border-radius: 12px;
+}
+
+.tab-btn.active {
+  background: #2563eb;
+}
+
+/* ========= ホーム ========= */
+
+.home-header {
+  text-align: center;
+  font-weight: bold;
+  margin-bottom: 10px;
+}
+
+.scene {
+  position: relative;
+  height: 180px;
+  border-radius: 12px;
+  margin-bottom: 12px;
+  overflow: hidden;
+  background: #1f2937;
+  border: 1px solid #374151;
+}
+
+/* ========= スプライト ========= */
+
+#spriteViewport {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  width: 72px;  /* 24*3 */
+  height: 96px; /* 32*3 */
+  transform: translateX(-50%);
+  z-index: 10;
+}
+
+#spriteSheetLayer {
+  position: absolute;
+  inset: 0;
+  background-repeat: no-repeat;
+  background-size: 288px 192px; /* (96*3, 64*3) */
+  image-rendering: pixelated;
+}
+
+#spriteFxLayer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 15;
+}
+
+/* ========= 育成表示 ========= */
+
+.growth-info {
+  text-align: center;
+  margin-bottom: 10px;
+}
+
+/* ========= 属性背景（少し派手目） ========= */
+
+.attr-none { background: #1f2937; }
+.attr-volcano { background: rgba(239, 68, 68, 0.35); }     /* 赤 */
+.attr-tornado { background: rgba(255, 255, 255, 0.25); }   /* 白 */
+.attr-earthquake { background: rgba(34, 197, 94, 0.35); }  /* 緑 */
+.attr-storm { background: rgba(59, 130, 246, 0.35); }      /* 青 */
+
+/* =========================================================
+   環境タブ v0.71：無属性ボタン配置
+   - スマホ幅：ボタンを上
+   - 広い幅：右カラム
+   ========================================================= */
+
+.env-layout {
+  display: block; /* デフォルトは縦 */
+}
+
+.env-neutral {
+  margin-bottom: 12px;
+}
+
+/* 画面が広い場合は2カラム */
+@media (min-width: 520px) {
+  .env-layout {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+  }
+
+  .env-neutral {
+    width: 180px;
+    margin-bottom: 0;
+    flex: 0 0 auto;
+  }
+
+  .env-sliders {
+    flex: 1 1 auto;
+  }
+}
+
+/* =========================================================
+   環境ランクエフェクト
+   ========================================================= */
+
+/* ===== 超ベスト環境：画面全体派手エフェクト ===== */
+
+.scene.superbest-burst::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 20% 30%, rgba(255,255,255,0.9) 0%, transparent 40%),
+    radial-gradient(circle at 80% 40%, rgba(255,255,0,0.8) 0%, transparent 45%),
+    radial-gradient(circle at 50% 70%, rgba(255,200,255,0.8) 0%, transparent 50%);
+  animation: superbestPulse 1.2s infinite alternate;
+  z-index: 5;
+}
+
+@keyframes superbestPulse {
+  0%   { opacity: 0.4; transform: scale(1); }
+  100% { opacity: 0.9; transform: scale(1.05); }
+}
+
+/* 追加きらめき粒 */
+.superbest-particle {
+  position: absolute;
+  font-size: 18px;
+  pointer-events: none;
+  animation: superbestFloat 1.5s infinite ease-in-out;
+  z-index: 6;
+}
+
+@keyframes superbestFloat {
+  0%   { transform: translateY(0) scale(0.8); opacity: 0; }
+  30%  { opacity: 1; }
+  50%  { transform: translateY(-15px) scale(1.2); }
+  100% { transform: translateY(-30px) scale(0.8); opacity: 0; }
+}
+
+/* ===== ベスト・良好：音符のみ ===== */
+
+.fx-note-only {
+  position: absolute;
+  font-size: 18px;
+  pointer-events: none;
+  animation: noteFloat 1.4s infinite ease-in-out;
+}
+
+@keyframes noteFloat {
+  0%   { transform: translateY(0); opacity: 0; }
+  40%  { opacity: 1; }
+  100% { transform: translateY(-20px); opacity: 0; }
+}
+
+/* ========= 冒険オーバーレイ ========= */
+
+.adventure-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-weight: bold;
+  font-size: 18px;
+  background: rgba(17,24,39,0.92);
+  z-index: 80;
+}
+
+/* =========================================================
+   モーダル（カムバック：QR廃止）
+   ========================================================= */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.78);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 200;
+}
+
+.modal-content {
+  background: #1f2937;
+  border: 1px solid #374151;
+  padding: 16px;
+  border-radius: 12px;
+  width: 92%;
+  max-width: 420px;
+}
+
+.modal-content h3 {
+  margin: 0 0 10px 0;
+  text-align: center;
+}
+
+#modalSoulText {
+  min-height: 110px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
