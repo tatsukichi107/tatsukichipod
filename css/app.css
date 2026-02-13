@@ -181,10 +181,10 @@ input[type="text"], textarea{
 }
 
 /* tab panels */
-.tab{
+.tab-content{
   display:none;
 }
-.tab.active{ display:block; }
+.tab-content.active{ display:block; }
 
 /* ===== home scene ===== */
 .scene{
