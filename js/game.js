@@ -1,35 +1,55 @@
 /* =========================================================
- * game.js（タリスポッド：環境判定＆育成ロジック）
+ * game.js  v0.76-stable
  *
- * app.js が期待する公開API：
- *  - window.TSP_GAME = {
- *      TEMP_STEPS, HUM_STEPS, ATTR_META, LIMITS,
- *      Rank,
- *      envAttribute(temp, hum),
- *      maxHP(soul),
- *      computeRank(monster, env, now),
- *      computeMinutePreview(soul, monster, env, now, elemCounter),
- *      applyOneMinute(soul, monster, env, now, elemCounter),
- *    }
+ * - 属性定義（環境属性の決定）※中心0＝無属性
+ *   右上：土（earthquake）
+ *   右下：水（storm）
+ *   左下：風（tornado）
+ *   左上：火（volcano）
  *
- * 重要：
- * - 最大HP NaN対策：baseHP / growHP を数値として扱う
- * - 光適正は「通常環境（無属性/水中以外）」でのみ足切り
- * - 無属性（temp0 hum50）は光無視＆成長なし
- * - 水中（hum=100）は光無視（＝水深扱いだが足切りしない）
- * - 成長：回復→成長（最大HP増加時は currentHP も同時増加）
+ * - 環境判定の優先順位（ユーザー最終合意）
+ *   0) 温度0 & 湿度50 -> 無属性（光無視）
+ *   1) 湿度100 -> 水中（北海/南海 + 水深0/50/100が一致判定に使える）
+ *      ※水中は「光足切り」無視（= 水深は一致判定に必要）
+ *   2) 通常環境（湿度!=100）では「光は足切り条件」
+ *      光が不適切 -> 強制で最悪環境
+ *   3) 光が適切なら
+ *      超ベスト：温度・湿度（必要なら水深）完全一致
+ *      ベスト：温度×湿度のエリア一致
+ *      それ以外：属性相性で 良好/普通/最悪
+ *
+ * - 成長/回復（ホーム表示中のみ1分ごとに判定）
+ *   HP成長と同時に currentHP も同時増加（例:600/600→650/650）
+ *   苦手環境のHP減少は growHPではなく currentHP を減らす
+ *   currentHP が最大未満なら、普通以上で放置回復
+ *     普通：最大100/分、良好：200/分、ベスト：300/分、超ベスト：500/分
+ *     上限に達する分まで
+ *   上限：
+ *     growHP 上限 = +5110
+ *     growStats 上限 = +630
+ *
  * ========================================================= */
 
 (function () {
   "use strict";
 
-  const TSP_GAME = {};
+  // ----- Attribute meta -----
+  const ATTR_META = Object.freeze({
+    volcano: { jp: "火", en: "Volcano" },
+    tornado: { jp: "風", en: "Tornado" },
+    earthquake: { jp: "土", en: "Earthquake" },
+    storm: { jp: "水", en: "Storm" },
+    // 将来拡張（未実装）：spiritual / necrom
+  });
 
-  // =========================================================
-  // 定数
-  // =========================================================
+  // ----- Growth limits -----
+  const LIMITS = Object.freeze({
+    hpGrowMax: 5110,
+    elemGrowMax: 630,
+  });
 
-  // 温度ステップ（-297, -45, -40, -35 ... 0,5,10...40,45,999）
+  // ----- Slider steps -----
+  // 温度: -297, -45, -40, -35 ... 0, 5, 10 ... 40, 45, 999
   const TEMP_STEPS = (() => {
     const arr = [-297, -45];
     for (let t = -40; t <= 45; t += 5) arr.push(t);
@@ -38,7 +58,7 @@
     return Array.from(new Set(arr));
   })();
 
-  // 湿度ステップ（0,5,10...90,95,99,100）
+  // 湿度: 0..90 を5刻み + 95, 99, 100
   const HUM_STEPS = (() => {
     const arr = [];
     for (let h = 0; h <= 90; h += 5) arr.push(h);
@@ -46,368 +66,346 @@
     return Array.from(new Set(arr));
   })();
 
-  const LIMITS = {
-    hpGrowMax: 5110,
-    elemGrowMax: 630,
-  };
-
-  const Rank = {
+  // ----- Rank -----
+  const Rank = Object.freeze({
     neutral: "neutral",
     superbest: "superbest",
     best: "best",
     good: "good",
     normal: "normal",
     bad: "bad",
-  };
+  });
 
-  const ATTR_META = {
-    volcano: { jp: "火", en: "Volcano" },
-    tornado: { jp: "風", en: "Tornado" },
-    earthquake: { jp: "土", en: "Earthquake" },
-    storm: { jp: "水", en: "Storm" },
-  };
-
-  // 属性相性（現状：弱点だけ使う。光闇は後回し）
-  // tornado（風）の弱点 earthquake（土）
-  // ※他属性も暫定で循環させておく（後で調整OK）
-  const WEAK_OF = {
-    volcano: "storm",       // 火の弱点＝水（仮）
-    tornado: "earthquake",  // 風の弱点＝土（確定）
-    earthquake: "volcano",  // 土の弱点＝火（仮）
-    storm: "tornado",       // 水の弱点＝風（仮）
-  };
-
-  // =========================================================
-  // 環境属性決定（温度×湿度：0中心、四象限）
-  // 右上=土 / 右下=水 / 左下=風 / 左上=火
-  // 中心（temp0 hum50）=無属性
-  // =========================================================
-  function envAttribute(temp, hum) {
-    const t = Number(temp);
-    const h = Number(hum);
-
-    if (t === 0 && h === 50) return "none";
-
-    // dy: 湿度 50 を基準に上下
-    const dx = t;         // 右：正、左：負
-    const dy = h - 50;    // 上：正、下：負
-
-    if (dx >= 0 && dy >= 0) return "earthquake"; // 右上=土
-    if (dx >= 0 && dy < 0)  return "storm";      // 右下=水
-    if (dx < 0 && dy < 0)   return "tornado";    // 左下=風
-    return "volcano";                            // 左上=火
+  function clampInt(n, min, max) {
+    n = Number(n);
+    if (!Number.isFinite(n)) n = min;
+    n = Math.floor(n);
+    if (n < min) return min;
+    if (n > max) return max;
+    return n;
   }
 
-  // =========================================================
-  // 光の適正（通常環境のみで足切り）
-  // 06:00-09:59 => 50
-  // 10:00-15:59 => 100
-  // 16:00-05:59 => 0
-  // =========================================================
-  function expectedLightByTime(now) {
-    const h = now.getHours(); // ローカル時刻
+  function envAttribute(temp, hum) {
+    // 無属性判定は上位で行うが、ここでは純粋に4象限の属性を返す（中心は無属性扱いにしない）
+    // 右上：土 / 右下：水 / 左下：風 / 左上：火
+    // x: temp, y: hum-50 を使って上下を判定（湿度50を中心）
+    const x = Number(temp);
+    const y = Number(hum) - 50;
+
+    if (x === 0 && Number(hum) === 50) return "neutral"; // 便宜上
+    if (x >= 0 && y < 0) return "storm";        // 右下（水）
+    if (x >= 0 && y >= 0) return "earthquake";  // 右上（土）
+    if (x < 0 && y < 0) return "tornado";       // 左下（風）
+    return "volcano";                            // 左上（火）
+  }
+
+  function isNeutralEnv(env) {
+    return Number(env.temp) === 0 && Number(env.hum) === 50;
+  }
+
+  // 光の適正（通常環境のみ足切り）
+  // 6:00～9:59  -> 50
+  // 10:00～15:59 -> 100
+  // 16:00～5:59  -> 0
+  function requiredLightByTime(now) {
+    const h = now.getHours();
     if (h >= 6 && h <= 9) return 50;
     if (h >= 10 && h <= 15) return 100;
-    return 0; // 16〜翌5
+    return 0;
   }
 
-  // =========================================================
+  function isLightAppropriate(env, now) {
+    const req = requiredLightByTime(now);
+    return Number(env.light) === req;
+  }
+
+  // 水中のエリア（北海/南海）
+  function seaAreaByTemp(temp) {
+    return Number(temp) < 0 ? "north" : "south";
+  }
+
+  // 水深（0/50/100）
+  function waterDepth(env) {
+    // 湿度100のときだけ light を水深として扱う
+    return Number(env.light);
+  }
+
+  // 属性相性（ユーザー最終：同属性＝良好、苦手属性＝最悪、残り2つ＝普通）
+  // ※相性サイクルは将来調整可能。現時点は以下で固定：
+  // tornado(風) の苦手 = volcano(火)
+  // volcano(火) の苦手 = earthquake(土)
+  // earthquake(土) の苦手 = storm(水)
+  // storm(水) の苦手 = tornado(風)
+  const WEAK_TO = Object.freeze({
+    tornado: "volcano",
+    volcano: "earthquake",
+    earthquake: "storm",
+    storm: "tornado",
+  });
+
+  function affinityRankByAttribute(legendzAttr, envAttr) {
+    if (!legendzAttr || envAttr === "neutral") return Rank.neutral;
+
+    if (envAttr === legendzAttr) return Rank.good; // 良好（同属性）
+    const weak = WEAK_TO[legendzAttr];
+    if (envAttr === weak) return Rank.bad;         // 最悪（苦手属性）
+    return Rank.normal;                            // 普通（残り2属性）
+  }
+
+  // エリア一致（ベスト）：温度×湿度のエリア一致
+  // 「エリア」は TEMP_STEPS / HUM_STEPS のインデックスを使い、周辺1セル以内を同エリアとみなす
+  function areaKeyFor(env) {
+    const tIdx = TEMP_STEPS.indexOf(Number(env.temp));
+    const hIdx = HUM_STEPS.indexOf(Number(env.hum));
+    return { tIdx, hIdx };
+  }
+  function areaMatch(a, b) {
+    const A = areaKeyFor(a);
+    const B = areaKeyFor(b);
+    if (A.tIdx < 0 || A.hIdx < 0 || B.tIdx < 0 || B.hIdx < 0) return false;
+    return Math.abs(A.tIdx - B.tIdx) <= 1 && Math.abs(A.hIdx - B.hIdx) <= 1;
+  }
+
+  // 超ベスト：温度・湿度（※水中は追加で水深）完全一致
+  function isSuperBest(mon, env) {
+    const sb = mon?.superBest;
+    if (!sb) return false;
+
+    if (Number(env.hum) === 100) {
+      // 水中：温度・湿度（=100）・水深一致
+      return Number(env.temp) === Number(sb.temp) &&
+        Number(env.hum) === 100 &&
+        Number(waterDepth(env)) === Number(sb.waterDepth);
+    }
+
+    // 通常：温度・湿度完全一致（湿度は sb.hum に従う）
+    return Number(env.temp) === Number(sb.temp) &&
+      Number(env.hum) === Number(sb.hum);
+  }
+
+  // ベスト：エリア一致（超ベストでなければ）
+  function isBest(mon, env) {
+    const sb = mon?.superBest;
+    if (!sb) return false;
+
+    // 超ベスト定義から「ベスト中心」を作る（湿度100の場合は水深も含めたいが、ベストは温度×湿度エリアのみ）
+    const center = {
+      temp: Number(sb.temp),
+      hum: Number(env.hum) === 100 ? 100 : Number(sb.hum),
+      light: Number(env.light),
+    };
+
+    return areaMatch(center, env);
+  }
+
+  // 環境ランク計算（ホーム表示用）
+  function computeRank(mon, env, now, legendzAttrOpt) {
+    const e = { temp: Number(env.temp), hum: Number(env.hum), light: Number(env.light) };
+
+    // 0) 無属性
+    if (isNeutralEnv(e)) {
+      return { rank: Rank.neutral, envAttr: "neutral" };
+    }
+
+    // 1) 水中
+    if (Number(e.hum) === 100) {
+      const envAttr = "storm"; // 水中は水属性扱い（ベース）
+      // 水中は光足切り無視（=水深扱いで一致判定に使える）
+      if (isSuperBest(mon, e)) return { rank: Rank.superbest, envAttr, sea: seaAreaByTemp(e.temp), depth: waterDepth(e) };
+      if (isBest(mon, e)) return { rank: Rank.best, envAttr, sea: seaAreaByTemp(e.temp), depth: waterDepth(e) };
+      // それ以外は属性相性（通常の相性ルールで判定）
+      const attr = envAttr;
+      const legAttr = legendzAttrOpt || null;
+      if (legAttr) return { rank: affinityRankByAttribute(legAttr, attr), envAttr: attr, sea: seaAreaByTemp(e.temp), depth: waterDepth(e) };
+      return { rank: Rank.normal, envAttr: attr, sea: seaAreaByTemp(e.temp), depth: waterDepth(e) };
+    }
+
+    // 2) 通常環境：光足切り
+    if (!isLightAppropriate(e, now)) {
+      const attr = envAttribute(e.temp, e.hum);
+      return { rank: Rank.bad, envAttr: attr === "neutral" ? "neutral" : attr, lightGate: "fail" };
+    }
+
+    // 3) 光OK：超ベスト→ベスト→属性相性
+    const attr = envAttribute(e.temp, e.hum);
+    if (isSuperBest(mon, e)) return { rank: Rank.superbest, envAttr: attr };
+    if (isBest(mon, e)) return { rank: Rank.best, envAttr: attr };
+
+    const legAttr = legendzAttrOpt || null;
+    if (legAttr) return { rank: affinityRankByAttribute(legAttr, attr), envAttr: attr };
+
+    return { rank: Rank.normal, envAttr: attr };
+  }
+
   // 最大HP
-  // =========================================================
   function maxHP(soul) {
     const base = Number(soul?.baseHP ?? 0);
     const grow = Number(soul?.growHP ?? 0);
-    const safeBase = Number.isFinite(base) ? base : 0;
-    const safeGrow = Number.isFinite(grow) ? grow : 0;
-    const cappedGrow = Math.min(LIMITS.hpGrowMax, Math.max(0, safeGrow));
-    return safeBase + cappedGrow;
+    const m = base + grow;
+    return Number.isFinite(m) ? m : base;
   }
 
-  // =========================================================
-  // 超ベスト/ベスト判定
-  // - 超ベスト：温度・湿度（＋水中なら水深）完全一致
-  // - ベスト：エリア一致（ざっくり：超ベストの近傍エリア）
-  //
-  // ※エリア一致は、今後の調整前提の実装：
-  //    superBest(temp, hum) を中心に temp±10, hum±10 をベストエリアとする
-  // =========================================================
-  function isSuperBest(monster, env) {
-    if (!monster?.superBest) return false;
-    const sb = monster.superBest;
+  // 1分あたりの成長定義（HP成長・属性成長）
+  // ユーザー仕様：
+  // 超ベスト：HP +50/分、属性 +20/分
+  // ベスト：HP +30/分、属性 +10/分
+  // 得意（良好）：HP +20/分、属性 +10/2分
+  // 普通：HP +10/分、属性 +10/3分
+  // 苦手（最悪）：HP -10（currentHP減少）、属性 +10/5分
+  const GROW_RULES = Object.freeze({
+    superbest: { hp: 50, elem: 20, every: 1 },
+    best: { hp: 30, elem: 10, every: 1 },
+    good: { hp: 20, elem: 10, every: 2 },
+    normal: { hp: 10, elem: 10, every: 3 },
+    bad: { hpDmg: 10, hp: 0, elem: 10, every: 5 },
+  });
 
-    const tOk = Number(env.temp) === Number(sb.temp);
-    const hOk = Number(env.hum) === Number(sb.hum);
+  // 回復量/分
+  const HEAL_RULES = Object.freeze({
+    good: 200,
+    best: 300,
+    superbest: 500,
+    normal: 100,
+    bad: 0,
+    neutral: 0,
+  });
 
-    if (!tOk || !hOk) return false;
+  // 1分判定の事前プレビュー（UI表示用）
+  function computeMinutePreview(soul, mon, envApplied, now, elemCounter) {
+    const legAttr = soul?.attribute;
+    const rinfo = computeRank(mon, envApplied, now, legAttr);
+    const r = rinfo.rank;
 
-    // 水中（hum=100）の時だけ水深も一致判定に使う、という仕様が将来あるので対応
-    if (Number(env.hum) === 100) {
-      const depth = Number(env.light);
-      const sbDepth = Number(sb.waterDepth ?? 50);
-      return depth === sbDepth;
-    }
-    return true;
-  }
-
-  function isBest(monster, env) {
-    // 超ベストならここではtrueにしない（優先順位は上で処理）
-    if (!monster?.superBest) return false;
-
-    const sb = monster.superBest;
-
-    // エリア一致：近傍（±10）
-    const dt = Math.abs(Number(env.temp) - Number(sb.temp));
-    const dh = Math.abs(Number(env.hum) - Number(sb.hum));
-
-    return (dt <= 10 && dh <= 10);
-  }
-
-  // =========================================================
-  // 環境ランク判定（app.js の表示/表情に直結）
-  // =========================================================
-  function computeRank(monster, env, now) {
-    const temp = Number(env?.temp ?? 0);
-    const hum = Number(env?.hum ?? 50);
-    const light = Number(env?.light ?? 50);
-
-    // 1) 無属性（最優先）
-    if (temp === 0 && hum === 50) {
-      return { rank: Rank.neutral, envAttr: "none", reason: "neutral" };
+    if (r === Rank.neutral) {
+      return { rank: r, envAttr: rinfo.envAttr, heal: 0, hpDmg: 0, hpGrow: 0, elemKey: null, elemGrow: 0 };
     }
 
-    // 2) 水中（湿度=100）：光は足切り無視（＝水深扱いは将来）
-    const isWater = (hum === 100);
-    const envAttr = isWater ? "storm" : envAttribute(temp, hum);
+    // 属性成長キー：環境属性に応じて上がるパラメータ
+    // 火->fire, 風->wind, 土->earth, 水->water
+    const envAttr = rinfo.envAttr;
+    const elemKey =
+      envAttr === "volcano" ? "fire" :
+      envAttr === "tornado" ? "wind" :
+      envAttr === "earthquake" ? "earth" :
+      envAttr === "storm" ? "water" : null;
 
-    // 3) 光足切り（通常環境のみ）
-    if (!isWater) {
-      const expected = expectedLightByTime(now);
-      if (light !== expected) {
-        return { rank: Rank.bad, envAttr, reason: "light_mismatch" };
-      }
-    }
-
-    // 4) 超ベスト
-    if (!isWater && isSuperBest(monster, env)) {
-      return { rank: Rank.superbest, envAttr, reason: "superbest" };
-    }
-
-    // 5) ベスト（エリア一致）
-    if (!isWater && isBest(monster, env)) {
-      return { rank: Rank.best, envAttr, reason: "best" };
-    }
-
-    // 6) 属性で 良好/普通/最悪
-    const monAttr = monster?.id === "windragon" ? "tornado" : (monster?.attribute || "tornado");
-    const weak = WEAK_OF[monAttr] || "earthquake";
-
-    if (envAttr === monAttr) return { rank: Rank.good, envAttr, reason: "same_attr" };
-    if (envAttr === weak) return { rank: Rank.bad, envAttr, reason: "weak_attr" };
-    return { rank: Rank.normal, envAttr, reason: "normal_attr" };
-  }
-
-  // =========================================================
-  // 成長パラメータの対象要素
-  // =========================================================
-  function elemKeyByEnvAttr(envAttr) {
-    switch (envAttr) {
-      case "volcano": return "fire";
-      case "tornado": return "wind";
-      case "earthquake": return "earth";
-      case "storm": return "water";
-      default: return null;
-    }
-  }
-
-  // =========================================================
-  // 分ごとの成長ルール（rank別）
-  // =========================================================
-  function growthRule(rank) {
-    switch (rank) {
-      case Rank.superbest:
-        return { hpGrow: 50, elemGrow: 20, elemEvery: 1, hpDmg: 0, healMax: 500 };
-      case Rank.best:
-        return { hpGrow: 30, elemGrow: 10, elemEvery: 1, hpDmg: 0, healMax: 300 };
-      case Rank.good:
-        return { hpGrow: 20, elemGrow: 10, elemEvery: 2, hpDmg: 0, healMax: 200 };
-      case Rank.normal:
-        return { hpGrow: 10, elemGrow: 10, elemEvery: 3, hpDmg: 0, healMax: 100 };
-      case Rank.bad:
-        return { hpGrow: 0,  elemGrow: 10, elemEvery: 5, hpDmg: 10, healMax: 0 };
-      default:
-        return { hpGrow: 0,  elemGrow: 0,  elemEvery: 999, hpDmg: 0, healMax: 0 };
-    }
-  }
-
-  // =========================================================
-  // env変化でカウンタをリセット（elemCounterにlastを埋める）
-  // =========================================================
-  function resetCountersIfNeeded(elemCounter, envAttr, rank) {
-    if (!elemCounter) return;
-    const key = `${envAttr}:${rank}`;
-    if (elemCounter._lastKey !== key) {
-      elemCounter.fire = 0;
-      elemCounter.wind = 0;
-      elemCounter.earth = 0;
-      elemCounter.water = 0;
-      elemCounter._lastKey = key;
-    }
-  }
-
-  // =========================================================
-  // 次の1分で起こる「予告」を計算（UI表示用）
-  // =========================================================
-  function computeMinutePreview(soul, monster, env, now, elemCounter) {
-    const info = computeRank(monster, env, now);
-    const { rank, envAttr } = info;
-
-    if (rank === Rank.neutral) {
-      return { rank, envAttr, heal: 0, hpDmg: 0, hpGrow: 0, elemKey: null, elemGrow: 0 };
-    }
-
-    resetCountersIfNeeded(elemCounter, envAttr, rank);
-
-    const rule = growthRule(rank);
-    const ek = elemKeyByEnvAttr(envAttr);
-
-    // 回復（普通以上のみ）
+    // 回復（currentHPが最大未満なら）
     const mx = maxHP(soul);
-    const cur = Number(soul.currentHP ?? mx);
-    const missing = Math.max(0, mx - cur);
-    const heal = Math.min(rule.healMax, missing);
+    const cur = clampInt(soul.currentHP ?? mx, 0, mx);
+    const healCap = HEAL_RULES[r] ?? 0;
+    const heal = (cur < mx) ? Math.min(healCap, mx - cur) : 0;
 
-    // HPダメージ（最悪のみ）
-    const hpDmg = rule.hpDmg;
+    // 成長
+    const rule = (r === Rank.superbest) ? GROW_RULES.superbest :
+      (r === Rank.best) ? GROW_RULES.best :
+      (r === Rank.good) ? GROW_RULES.good :
+      (r === Rank.bad) ? GROW_RULES.bad : GROW_RULES.normal;
 
-    // 最大HP成長
-    const hpGrow = rule.hpGrow;
+    const hpGrow = rule.hp ?? 0;
+    const hpDmg = rule.hpDmg ?? 0;
 
-    // 属性成長（周期到達時のみ予告表示）
     let elemGrow = 0;
-    let elemKey = null;
-
-    if (ek) {
-      const cnt = Number(elemCounter?.[ek] ?? 0);
-      const nextCnt = cnt + 1;
-      elemKey = ek;
-
-      // 上限なら予告は +0（app.js 側で +0 表示したいケースを拾うため）
-      const remain = LIMITS.elemGrowMax - Number(soul.growStats?.[ek] ?? 0);
-      if (remain <= 0) {
+    if (elemKey) {
+      const curGrow = clampInt(soul.growStats?.[elemKey] ?? 0, 0, LIMITS.elemGrowMax);
+      if (curGrow >= LIMITS.elemGrowMax) {
         elemGrow = 0;
-      } else if (rule.elemEvery > 0 && (nextCnt % rule.elemEvery === 0)) {
-        elemGrow = rule.elemGrow;
       } else {
-        elemGrow = 0; // 周期未到達 → 表示しない（app.js側は0なら出さない）
+        // カウンタがrule.everyに達したときのみ加算
+        const cnt = clampInt(elemCounter?.[elemKey] ?? 0, 0, 999999);
+        // 予告は「次の分で上がるか」を表示するため、
+        // 次の分で cnt+1 が every の倍数なら上がる
+        const will = ((cnt + 1) % rule.every === 0);
+        elemGrow = will ? rule.elem : 0;
       }
     }
 
-    return { rank, envAttr, heal, hpDmg, hpGrow, elemKey, elemGrow };
+    return { rank: r, envAttr, heal, hpDmg, hpGrow, elemKey, elemGrow };
   }
 
-  // =========================================================
-  // 1分経過を適用（回復→成長→ダメージ等）
-  // =========================================================
-  function applyOneMinute(soul, monster, env, now, elemCounter) {
-    const info = computeRank(monster, env, now);
-    const { rank, envAttr } = info;
+  // 1分経過時の適用
+  function applyOneMinute(soul, mon, envApplied, now, elemCounter) {
+    const legAttr = soul?.attribute;
+    const rinfo = computeRank(mon, envApplied, now, legAttr);
+    const r = rinfo.rank;
 
-    if (rank === Rank.neutral) return;
+    if (r === Rank.neutral) return;
 
-    resetCountersIfNeeded(elemCounter, envAttr, rank);
+    const envAttr = rinfo.envAttr;
+    const elemKey =
+      envAttr === "volcano" ? "fire" :
+      envAttr === "tornado" ? "wind" :
+      envAttr === "earthquake" ? "earth" :
+      envAttr === "storm" ? "water" : null;
 
-    const rule = growthRule(rank);
-    const ek = elemKeyByEnvAttr(envAttr);
+    // まず回復（普通以上のみ、最悪は回復なし）
+    const mx0 = maxHP(soul);
+    soul.currentHP = clampInt(soul.currentHP ?? mx0, 0, mx0);
 
-    // -------- 回復（普通以上）--------
-    let mx = maxHP(soul);
-    let cur = Number(soul.currentHP ?? mx);
-    if (!Number.isFinite(cur)) cur = mx;
-
-    if (rule.healMax > 0 && cur < mx) {
-      const heal = Math.min(rule.healMax, mx - cur);
-      soul.currentHP = Math.min(mx, cur + heal);
-      cur = soul.currentHP;
+    const healCap = HEAL_RULES[r] ?? 0;
+    if (healCap > 0 && soul.currentHP < mx0) {
+      const heal = Math.min(healCap, mx0 - soul.currentHP);
+      soul.currentHP += heal;
     }
 
-    // -------- 最悪環境のHP減少（現在HPが減る）--------
-    if (rule.hpDmg > 0) {
-      const dmg = rule.hpDmg;
-      soul.currentHP = Math.max(1, Number(soul.currentHP ?? 1) - dmg);
-      cur = soul.currentHP;
+    // 次に成長/ダメージ
+    const rule = (r === Rank.superbest) ? GROW_RULES.superbest :
+      (r === Rank.best) ? GROW_RULES.best :
+      (r === Rank.good) ? GROW_RULES.good :
+      (r === Rank.bad) ? GROW_RULES.bad : GROW_RULES.normal;
+
+    // 最悪環境：HP減少（growではなくcurrentHP）
+    if (rule.hpDmg) {
+      soul.currentHP = Math.max(0, soul.currentHP - rule.hpDmg);
     }
 
-    // -------- 最大HP成長（growHP）--------
-    if (rule.hpGrow > 0) {
-      const beforeGrow = Number(soul.growHP ?? 0);
-      const cappedBefore = Math.min(LIMITS.hpGrowMax, Math.max(0, beforeGrow));
+    // HP成長（上限あり） & 最大HP増加時はcurrentHPも同時増加
+    if (rule.hp) {
+      const beforeGrow = clampInt(soul.growHP ?? 0, 0, LIMITS.hpGrowMax);
+      const add = Math.min(rule.hp, LIMITS.hpGrowMax - beforeGrow);
+      if (add > 0) {
+        soul.growHP = beforeGrow + add;
+        // 最大HPが増えた分、currentHPも同時に増加
+        soul.currentHP += add;
+      } else {
+        soul.growHP = beforeGrow;
+      }
+    } else {
+      soul.growHP = clampInt(soul.growHP ?? 0, 0, LIMITS.hpGrowMax);
+    }
 
-      const add = rule.hpGrow;
-      const after = Math.min(LIMITS.hpGrowMax, cappedBefore + add);
-      const delta = after - cappedBefore;
+    // 最大HPに合わせて currentHP をクランプ
+    const mx1 = maxHP(soul);
+    soul.currentHP = clampInt(soul.currentHP ?? mx1, 0, mx1);
 
-      soul.growHP = after;
+    // 属性成長（周期カウンタ方式）
+    if (elemKey) {
+      elemCounter[elemKey] = clampInt(elemCounter[elemKey] ?? 0, 0, 999999) + 1;
 
-      // 最大HPが増えるとき currentHP も同時増加（要求仕様）
-      if (delta > 0) {
-        mx = maxHP(soul);
-        const newCur = Math.min(mx, Number(soul.currentHP ?? mx) + delta);
-        soul.currentHP = newCur;
+      const curGrow = clampInt(soul.growStats?.[elemKey] ?? 0, 0, LIMITS.elemGrowMax);
+      if (curGrow < LIMITS.elemGrowMax && (elemCounter[elemKey] % rule.every === 0)) {
+        const add = Math.min(rule.elem, LIMITS.elemGrowMax - curGrow);
+        soul.growStats[elemKey] = curGrow + add;
+      } else {
+        soul.growStats[elemKey] = curGrow;
       }
     }
 
-    // -------- 属性成長（周期）--------
-    if (ek) {
-      elemCounter[ek] = Number(elemCounter[ek] ?? 0) + 1;
-
-      // 周期到達で +elemGrow
-      if (rule.elemEvery > 0 && (elemCounter[ek] % rule.elemEvery === 0)) {
-        const before = Number(soul.growStats?.[ek] ?? 0);
-        const cappedBefore = Math.min(LIMITS.elemGrowMax, Math.max(0, before));
-        const add = rule.elemGrow;
-
-        const after = Math.min(LIMITS.elemGrowMax, cappedBefore + add);
-        soul.growStats[ek] = after;
-      }
-    }
-
-    // 互換フィールド更新（state.jsで作っているが、成長後も同期）
-    // grow / stats / hp など
-    if (soul.grow) {
-      soul.grow.hp = soul.growHP;
-      soul.grow.fire = soul.growStats.fire;
-      soul.grow.wind = soul.growStats.wind;
-      soul.grow.earth = soul.growStats.earth;
-      soul.grow.water = soul.growStats.water;
-    }
-    if (soul.stats) {
-      soul.stats.fire = (soul.baseStats.fire || 0) + (soul.growStats.fire || 0);
-      soul.stats.wind = (soul.baseStats.wind || 0) + (soul.growStats.wind || 0);
-      soul.stats.earth = (soul.baseStats.earth || 0) + (soul.growStats.earth || 0);
-      soul.stats.water = (soul.baseStats.water || 0) + (soul.growStats.water || 0);
-    }
-    if (soul.hp) {
-      soul.hp.base = soul.baseHP;
-      soul.hp.grow = soul.growHP;
-      soul.hp.current = soul.currentHP;
-    }
+    soul.updatedAt = Date.now();
   }
 
-  // =========================================================
-  // 公開
-  // =========================================================
-  TSP_GAME.TEMP_STEPS = TEMP_STEPS;
-  TSP_GAME.HUM_STEPS = HUM_STEPS;
-  TSP_GAME.LIMITS = LIMITS;
-  TSP_GAME.Rank = Rank;
-  TSP_GAME.ATTR_META = ATTR_META;
-
-  TSP_GAME.envAttribute = envAttribute;
-  TSP_GAME.maxHP = maxHP;
-
-  TSP_GAME.computeRank = computeRank;
-  TSP_GAME.computeMinutePreview = computeMinutePreview;
-  TSP_GAME.applyOneMinute = applyOneMinute;
-
-  window.TSP_GAME = TSP_GAME;
+  // 公開API
+  window.TSP_GAME = {
+    ATTR_META,
+    LIMITS,
+    TEMP_STEPS,
+    HUM_STEPS,
+    Rank,
+    envAttribute,
+    computeRank,
+    computeMinutePreview,
+    applyOneMinute,
+    maxHP,
+    requiredLightByTime,
+    isLightAppropriate,
+  };
 })();
