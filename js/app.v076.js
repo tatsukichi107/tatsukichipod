@@ -1,17 +1,21 @@
 /* =========================================================
- * js/app.v076.js  v0.76-FULL (Center fix + Moonwalk fix)
+ * js/app.v076.js  v0.76-FULL (Moonwalk OK + Walk-Frames Fix + Center Fix)
  *
- * 変更点（今回の要望分だけ）:
- * 1) レジェンズが右寄りになる問題を修正
- *    - 位置は常に left:50% を固定
- *    - 移動は translateX(x) のみで行う（calc(50%+x) を廃止）
- *    - 反転(scaleX)は“絵レイヤー”にのみ適用し、位置レイヤーにはかけない
+ * 今回の修正（要望分のみ）:
+ * 1) 歩行表情が「魔法攻撃(4) + 点滅」になる不具合を修正
+ *    - 原因：#spriteSheetLayer(96x64全体)に scaleX(-1) を掛けると列が反転し、
+ *            c=0/1 が 3/2 に見えてしまう
+ *    - 対策：sheetLayer自体は反転しない（transformをかけない）
+ *            代わりに「反転表示のときだけ backgroundPositionX を (3-c) に切替」
  *
- * 2) ムーンウォーク（移動方向と向きが逆）を修正
- *    - 右へ歩くとき：右向きに見えるように flip を切替
- *    - 左へ歩くとき：左向きに見えるように flip を切替
+ * 2) レジェンズが右寄りになる問題を修正（無属性/環境表情どちらも）
+ *    - 位置決めはCSSの margin:auto に任せる
+ *    - JSは translateX(x) だけを付与（left:50% / -50% は撤廃）
  *
- * ※それ以外は前回の完全復旧版の仕様を維持
+ * 3) ムーンウォークは前回直った条件を維持
+ *    - 全スプライトは左向き前提：
+ *      左向きに見せたい => 非反転
+ *      右向きに見せたい => 反転（背景位置Xを反転計算）
  * ========================================================= */
 
 (function () {
@@ -50,6 +54,7 @@
     frameW: 24,
     frameH: 32,
     scale: 3,
+    cols: 4,
     frameToRC(i) {
       const idx = Math.max(1, Math.min(8, i)) - 1;
       return { r: Math.floor(idx / 4), c: idx % 4 };
@@ -282,43 +287,32 @@
   }
 
   // =========================================================
-  // Sprite helpers（今回の修正核心）
+  // Sprite / Rendering（今回の修正核心）
   //
-  // 位置：spriteViewport に translateX(x) を適用
-  // 中心：spriteViewport は left:50% を固定
-  // 反転：spriteSheetLayer に scaleX(-1) を適用（位置レイヤーにかけない）
+  // - 位置はCSS（margin:auto）に任せる
+  // - JSは translateX(x) だけ付与（中心基準の-50%等は使わない）
+  // - 反転はsheetLayerのscaleXではなく「列を(3-c)に変換」して見た目を反転
   // =========================================================
-  function ensureViewportCenteringBase() {
-    // CSSがどうでも、JSで確実に center 基準を作る
-    spriteViewport.style.position = "relative";
-    spriteViewport.style.left = "50%";
-    // 中心合わせ（-50%）と移動（x）は viewport で管理
-    // 反転は sheet layer で管理する
-  }
-
   function setSpriteSheet() {
     spriteSheetLayer.style.backgroundImage = `url("${MONSTER.spritePath}")`;
+    // 念のためtransformをクリア（過去版の名残対策）
+    spriteSheetLayer.style.transform = "";
+    spriteViewport.style.transform = "translateX(0px)";
   }
 
   function applyViewportTransform(xPx) {
-    // 位置：常に中心(-50%) + 移動(x)
-    spriteViewport.style.transform = `translateX(calc(-50% + ${xPx}px))`;
+    spriteViewport.style.transform = `translateX(${xPx}px)`;
   }
 
-  function applyFlipToSheetLayer(flipX) {
-    // 反転は「絵レイヤー」だけに
-    spriteSheetLayer.style.transformOrigin = "center";
-    spriteSheetLayer.style.transform = flipX ? "scaleX(-1)" : "scaleX(1)";
-  }
-
-  function renderFrame(frameIndex, flipX) {
+  function renderFrame(frameIndex, wantRightFacing) {
+    // wantRightFacing: trueなら右向きに見せたい（左向きベースのため列を反転する）
     const rc = SHEET.frameToRC(frameIndex);
-    const x = -(rc.c * SHEET.frameW * SHEET.scale);
-    const y = -(rc.r * SHEET.frameH * SHEET.scale);
-    spriteSheetLayer.style.backgroundPosition = `${x}px ${y}px`;
+    const c = wantRightFacing ? (SHEET.cols - 1 - rc.c) : rc.c;
 
-    // ★今回の変更：反転はsheetLayerのみ
-    applyFlipToSheetLayer(!!flipX);
+    const x = -(c * SHEET.frameW * SHEET.scale);
+    const y = -(rc.r * SHEET.frameH * SHEET.scale);
+
+    spriteSheetLayer.style.backgroundPosition = `${x}px ${y}px`;
   }
 
   function clearFxAll() {
@@ -376,13 +370,10 @@
     if (WALK.turnTimer > 0) {
       WALK.turnTimer -= dtSec;
 
-      // 折返し振り向き：向いている方向に合わせる（見た目）
-      // ★ムーンウォーク修正に合わせて flip 条件も統一
-      // 「全スプライトは左向き前提」なので、
-      // 左向きで見せたいとき＝非反転
-      // 右向きで見せたいとき＝反転
-      const flipTurn = (WALK.facing === "right"); // 右向きに見せたいなら反転
-      renderFrame(3, flipTurn);
+      // 折返し振り向き：向いている方向に合わせる
+      // 左向きベースなので、右向きに見せたい時だけ列反転
+      const rightFacing = (WALK.facing === "right");
+      renderFrame(3, rightFacing);
       applyViewportTransform(WALK.x);
       return;
     }
@@ -408,12 +399,10 @@
       WALK.stepFrame = (WALK.stepFrame === 1) ? 2 : 1;
     }
 
-    // ★ムーンウォーク修正（ここが核心）
-    // 「全スプライトは左向き前提」なので：
-    // - 左へ歩く → 左向きに見せる → 非反転
-    // - 右へ歩く → 右向きに見せる → 反転
-    const flip = (WALK.facing === "right");
-    renderFrame(WALK.stepFrame, flip);
+    // ムーンウォーク対策維持：
+    // 右へ歩くなら右向きに見せたい => 列反転
+    const rightFacing = (WALK.facing === "right");
+    renderFrame(WALK.stepFrame, rightFacing);
 
     applyViewportTransform(WALK.x);
   }
@@ -625,10 +614,6 @@
     WALK.x = 0; WALK.facing = "right"; WALK.stepTimer = 0; WALK.stepFrame = 1; WALK.turnTimer = 0;
     IDLE.timer = 0; IDLE.frame = 1;
 
-    // 中心基準固定（今回追加）
-    ensureViewportCenteringBase();
-    applyViewportTransform(0);
-
     setHeader();
     refreshStatsUI();
     refreshCrystalsUI();
@@ -811,8 +796,7 @@
       spriteSheetLayer.style.backgroundRepeat = "no-repeat";
       spriteSheetLayer.style.backgroundSize = `${96 * SHEET.scale}px ${64 * SHEET.scale}px`;
 
-      // ★中心基準を固定（今回追加）
-      ensureViewportCenteringBase();
+      // 念のため：右寄り防止（CSSのmargin:autoが効く前提でtransform初期化）
       applyViewportTransform(0);
 
       bindEvents();
@@ -824,7 +808,6 @@
     }
   }
 
-  // 起動（安定優先：load）
   window.addEventListener("load", boot, { once: true });
 
 })();
