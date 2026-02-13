@@ -1,299 +1,250 @@
 /* =========================================================
- * state.js（短縮ソウルドールコード版 / QR廃止）
+ * state.js  v0.76-stable
+ * - ソウルドール（育成データ）を生成
+ * - 記憶コード（短縮）を発行/読み込み
+ * - サーガ名照合（違うサーガ名ならリボーン失敗）
  *
- * 役割：
- * - 新規ソウルドール生成
- * - カムバック用：短縮コード生成（SOUL-1.<payload>.<crc32>）
- * - 再リボーン用：短縮コード解析＋整形
- *
- * 仕様：
- * - 環境設定は保存しない（復帰時は必ず無属性：temp0 hum50 light50）
- * - ニックネームは保存する
- * - コピペ運用前提（手打ち想定なし）
- *
- * 互換対策：
- * - game.js が参照しがちな別名も保持（grow / stats など）
- *   → 最大HP NaN回避の保険
+ * 前提：
+ * - 現時点は windragon（ウインドラゴン）1体を安定運用
+ * - 環境設定は保存しない（再リボーン時は無属性固定）
  * ========================================================= */
 
 (function () {
   "use strict";
 
-  const TSP_STATE = {};
-
-  // ===== モンスター定義（今はwindragonのみ）=====
-  const MONSTERS = {
-    windragon: {
-      monsterId: "windragon",
-      speciesName: "ウインドラゴン",
-      attribute: "tornado",
-      weakAttr: "earthquake",
-      baseHP: 400,
-      baseStats: { fire: 60, wind: 100, earth: 60, water: 20 },
-      defaultMoves: Array.from({ length: 15 }, () => "NONE"),
-    },
-  };
-
-  const NEUTRAL_ENV = { temp: 0, hum: 50, light: 50 };
-
-  // =========================================================
-  // Base64URL（UTF-8対応）
-  // =========================================================
-  function bytesToB64u(bytes) {
-    let bin = "";
-    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-    const b64 = btoa(bin);
-    return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-  }
-
-  function b64uToBytes(b64u) {
-    const b64 = b64u.replace(/-/g, "+").replace(/_/g, "/");
-    const padLen = (4 - (b64.length % 4)) % 4;
-    const padded = b64 + "=".repeat(padLen);
-    const bin = atob(padded);
-    const out = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-    return out;
-  }
-
-  function utf8Encode(str) {
+  // ---------- UTF-8 / Base64URL helpers ----------
+  function utf8ToBytes(str) {
     return new TextEncoder().encode(str);
   }
-
-  function utf8Decode(bytes) {
+  function bytesToUtf8(bytes) {
     return new TextDecoder().decode(bytes);
   }
-
-  // =========================================================
-  // CRC32
-  // =========================================================
-  const CRC32_TABLE = (() => {
-    const table = new Uint32Array(256);
-    for (let i = 0; i < 256; i++) {
-      let c = i;
-      for (let k = 0; k < 8; k++) {
-        c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
-      }
-      table[i] = c >>> 0;
+  function b64Encode(bytes) {
+    let bin = "";
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
     }
-    return table;
-  })();
-
-  function crc32(bytes) {
-    let c = 0xFFFFFFFF;
-    for (let i = 0; i < bytes.length; i++) {
-      c = CRC32_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
-    }
-    return (c ^ 0xFFFFFFFF) >>> 0;
+    return btoa(bin);
+  }
+  function b64Decode(b64) {
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  }
+  function b64UrlEncode(bytes) {
+    return b64Encode(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  }
+  function b64UrlDecode(b64url) {
+    let b64 = b64url.replace(/-/g, "+").replace(/_/g, "/");
+    while (b64.length % 4) b64 += "=";
+    return b64Decode(b64);
   }
 
-  function crc32Hex8(bytes) {
-    const v = crc32(bytes);
-    return v.toString(16).padStart(8, "0");
+  // ---------- Constants ----------
+  const CODE_PREFIX = "SOUL1:";
+  const SPECIES_ID = "windragon";
+
+  // 「レジェンズ」表記のこだわり：内部名は lengendz で統一（名前だけ）
+  // ※プロパティ名としては soul を使う（既存実装との整合優先）
+  const DEFAULT_LENGENDZ = Object.freeze({
+    speciesId: SPECIES_ID,
+    speciesName: "ウインドラゴン",
+    attribute: "tornado", // 風＝トルネード
+    baseHP: 400,
+    baseStats: { fire: 60, wind: 100, earth: 60, water: 20 },
+    defaultMoves: Object.freeze([
+      "ワザ1", "ワザ2", "ワザ3", "ワザ4", "ワザ5",
+      "ワザ6", "ワザ7", "ワザ8", "ワザ9", "ワザ10",
+      "ワザ11", "ワザ12", "ワザ13", "ワザ14", "ワザ15"
+    ]),
+  });
+
+  function clampInt(n, min, max) {
+    n = Number(n);
+    if (!Number.isFinite(n)) n = min;
+    n = Math.floor(n);
+    if (n < min) return min;
+    if (n > max) return max;
+    return n;
   }
 
-  // =========================================================
-  // 互換フィールド付与（game.jsの期待ズレ対策）
-  // =========================================================
-  function applyCompatAliases(soul) {
-    // grow（よくある参照名）
-    soul.grow = soul.grow || {};
-    soul.grow.hp = Number.isFinite(soul.growHP) ? soul.growHP : 0;
-    soul.grow.fire = Number.isFinite(soul.growStats?.fire) ? soul.growStats.fire : 0;
-    soul.grow.wind = Number.isFinite(soul.growStats?.wind) ? soul.growStats.wind : 0;
-    soul.grow.earth = Number.isFinite(soul.growStats?.earth) ? soul.growStats.earth : 0;
-    soul.grow.water = Number.isFinite(soul.growStats?.water) ? soul.growStats.water : 0;
+  function shallowCopy(obj) {
+    return Object.assign({}, obj);
+  }
 
-    // stats（合算を期待する実装がある場合）
-    soul.stats = soul.stats || {};
-    soul.stats.fire = (soul.baseStats?.fire || 0) + (soul.growStats?.fire || 0);
-    soul.stats.wind = (soul.baseStats?.wind || 0) + (soul.growStats?.wind || 0);
-    soul.stats.earth = (soul.baseStats?.earth || 0) + (soul.growStats?.earth || 0);
-    soul.stats.water = (soul.baseStats?.water || 0) + (soul.growStats?.water || 0);
+  function makeNewSoulWindragon(sagaName) {
+    const saga = String(sagaName || "").trim();
+    if (!saga) throw new Error("サーガ名が空です");
 
-    // hp（max/currentをまとめて持ってほしそうな実装対策）
-    soul.hp = soul.hp || {};
-    soul.hp.base = soul.baseHP;
-    soul.hp.grow = soul.growHP;
-    soul.hp.current = soul.currentHP;
+    const soul = {
+      version: 1,
+
+      // identity
+      sagaName: saga,
+      speciesId: DEFAULT_LENGENDZ.speciesId,
+      speciesName: DEFAULT_LENGENDZ.speciesName,
+      attribute: DEFAULT_LENGENDZ.attribute, // tornado
+      nickname: "",
+
+      // stats
+      baseHP: DEFAULT_LENGENDZ.baseHP,
+      baseStats: shallowCopy(DEFAULT_LENGENDZ.baseStats),
+
+      // grow
+      growHP: 0,
+      growStats: { fire: 0, wind: 0, earth: 0, water: 0 },
+
+      // current
+      currentHP: DEFAULT_LENGENDZ.baseHP,
+
+      // inventory
+      crystals: { volcano: 0, tornado: 0, earthquake: 0, storm: 0 },
+
+      // moves (15 fixed)
+      moves: DEFAULT_LENGENDZ.defaultMoves.slice(),
+
+      // metadata (任意)
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
 
     return soul;
   }
 
-  // =========================================================
-  // ソウル生成
-  // =========================================================
-  TSP_STATE.newSoulWindragon = function (sagaName) {
-    const m = MONSTERS.windragon;
-    if (!m) throw new Error("monster定義が見つかりません");
-
-    const soul = {
-      version: 1,
-      sagaName: String(sagaName || "").trim(),
-      monsterId: m.monsterId,
-
-      speciesName: m.speciesName,
-      nickname: "",
-
-      attribute: m.attribute,
-      weakAttr: m.weakAttr,
-
-      baseHP: m.baseHP,
-      baseStats: { ...m.baseStats },
-
-      growHP: 0,
-      growStats: { fire: 0, wind: 0, earth: 0, water: 0 },
-
-      currentHP: m.baseHP,
-
-      crystals: { volcano: 0, tornado: 0, earthquake: 0, storm: 0 },
-
-      moves: [...m.defaultMoves],
-
-      envSetting: { ...NEUTRAL_ENV },
-    };
-
-    return applyCompatAliases(soul);
-  };
-
-  // =========================================================
-  // 短縮コード：SOUL-1.<payload>.<crc32>
-  // =========================================================
-  TSP_STATE.makeSoulCode = function (soul) {
+  function normalizeSoulForSave(soul) {
     if (!soul) throw new Error("ソウルがありません");
 
-    const payloadObj = {
-      s: String(soul.sagaName || ""),
-      m: String(soul.monsterId || "windragon"),
-      n: String(soul.nickname || ""),
-      ch: Number(soul.currentHP || 0),
-      g: [
-        Number(soul.growHP || 0),
-        Number(soul.growStats?.fire || 0),
-        Number(soul.growStats?.wind || 0),
-        Number(soul.growStats?.earth || 0),
-        Number(soul.growStats?.water || 0),
-      ],
-      c: [
-        Number(soul.crystals?.volcano || 0),
-        Number(soul.crystals?.tornado || 0),
-        Number(soul.crystals?.earthquake || 0),
-        Number(soul.crystals?.storm || 0),
-      ],
-      w: Array.isArray(soul.moves) ? soul.moves.slice(0, 15) : Array.from({ length: 15 }, () => "NONE"),
+    const saga = String(soul.sagaName || "").trim();
+    if (!saga) throw new Error("サーガ名が不正です");
+
+    const nickname = String(soul.nickname || "").trim();
+
+    const growHP = clampInt(soul.growHP ?? 0, 0, 999999);
+    const growStats = soul.growStats || {};
+    const g = {
+      fire: clampInt(growStats.fire ?? 0, 0, 999999),
+      wind: clampInt(growStats.wind ?? 0, 0, 999999),
+      earth: clampInt(growStats.earth ?? 0, 0, 999999),
+      water: clampInt(growStats.water ?? 0, 0, 999999),
     };
 
-    const json = JSON.stringify(payloadObj);
-    const jsonBytes = utf8Encode(json);
-    const payload = bytesToB64u(jsonBytes);
+    const crystals = soul.crystals || {};
+    const c = {
+      volcano: clampInt(crystals.volcano ?? 0, 0, 999999),
+      tornado: clampInt(crystals.tornado ?? 0, 0, 999999),
+      earthquake: clampInt(crystals.earthquake ?? 0, 0, 999999),
+      storm: clampInt(crystals.storm ?? 0, 0, 999999),
+    };
 
-    const sig = crc32Hex8(utf8Encode(payload));
-    return `SOUL-1.${payload}.${sig}`;
-  };
+    const moves = Array.isArray(soul.moves) ? soul.moves.slice(0, 15) : [];
+    while (moves.length < 15) moves.push(`ワザ${moves.length + 1}`);
+    const m = moves.map((x, i) => {
+      const s = String(x ?? "").trim();
+      return s ? s : `ワザ${i + 1}`;
+    });
 
-  // =========================================================
-  // コード解析
-  // =========================================================
-  TSP_STATE.parseSoulCode = function (code) {
+    // 最大HPは game.js 側で計算するが、currentHP の NaN防止だけここで整える
+    const baseHP = DEFAULT_LENGENDZ.baseHP;
+    const maxHP = baseHP + growHP;
+    const currentHP = clampInt(soul.currentHP ?? maxHP, 0, maxHP);
+
+    return {
+      v: 1,
+      sp: SPECIES_ID,
+      s: saga,
+      nn: nickname,
+      chp: currentHP,
+      ghp: growHP,
+      gs: g,
+      cr: c,
+      mv: m,
+    };
+  }
+
+  function inflateSoulFromPayload(p) {
+    if (!p || typeof p !== "object") throw new Error("記憶データが壊れています");
+
+    if (p.v !== 1) throw new Error("記憶データのバージョンが不正です");
+    if (p.sp !== SPECIES_ID) throw new Error("このソウルドールは未対応の種族です");
+
+    const soul = makeNewSoulWindragon(p.s);
+
+    soul.nickname = String(p.nn || "").trim();
+
+    soul.growHP = clampInt(p.ghp ?? 0, 0, 999999);
+    const gs = p.gs || {};
+    soul.growStats = {
+      fire: clampInt(gs.fire ?? 0, 0, 999999),
+      wind: clampInt(gs.wind ?? 0, 0, 999999),
+      earth: clampInt(gs.earth ?? 0, 0, 999999),
+      water: clampInt(gs.water ?? 0, 0, 999999),
+    };
+
+    const cr = p.cr || {};
+    soul.crystals = {
+      volcano: clampInt(cr.volcano ?? 0, 0, 999999),
+      tornado: clampInt(cr.tornado ?? 0, 0, 999999),
+      earthquake: clampInt(cr.earthquake ?? 0, 0, 999999),
+      storm: clampInt(cr.storm ?? 0, 0, 999999),
+    };
+
+    // moves
+    const mv = Array.isArray(p.mv) ? p.mv.slice(0, 15) : DEFAULT_LENGENDZ.defaultMoves.slice();
+    while (mv.length < 15) mv.push(`ワザ${mv.length + 1}`);
+    soul.moves = mv.map((x, i) => {
+      const s = String(x ?? "").trim();
+      return s ? s : `ワザ${i + 1}`;
+    });
+
+    // currentHP（最大HP増加時は game.js 側で currentHP 同時増加のルールを扱う）
+    const baseHP = soul.baseHP;
+    const maxHP = baseHP + soul.growHP;
+    soul.currentHP = clampInt(p.chp ?? maxHP, 0, maxHP);
+
+    soul.updatedAt = Date.now();
+    return soul;
+  }
+
+  function makeSoulCode(soul) {
+    const payload = normalizeSoulForSave(soul);
+    const json = JSON.stringify(payload);
+    const bytes = utf8ToBytes(json);
+    const b64u = b64UrlEncode(bytes);
+    return CODE_PREFIX + b64u;
+  }
+
+  function parseSoulCode(code) {
     const raw = String(code || "").trim();
-    if (!raw) throw new Error("コードが空です");
+    if (!raw) throw new Error("記憶が空です");
 
-    const normalized = raw.replace(/\s+/g, "");
-
-    if (!normalized.startsWith("SOUL-1.")) {
-      throw new Error("コード形式が違います（SOUL-1 ではありません）");
-    }
-
-    const parts = normalized.split(".");
-    if (parts.length !== 3) {
-      throw new Error("コード形式が壊れています（区切りが不正）");
-    }
-
-    const prefix = parts[0];
-    const payload = parts[1];
-    const sig = parts[2];
-
-    if (prefix !== "SOUL-1") throw new Error("コードバージョンが不正です");
-
-    const expect = crc32Hex8(utf8Encode(payload));
-    if (sig !== expect) {
-      throw new Error("コードが壊れているか改変されています（チェック不一致）");
-    }
-
-    let obj;
+    const body = raw.startsWith(CODE_PREFIX) ? raw.slice(CODE_PREFIX.length) : raw;
+    let payload;
     try {
-      const jsonBytes = b64uToBytes(payload);
-      const json = utf8Decode(jsonBytes);
-      obj = JSON.parse(json);
-    } catch {
-      throw new Error("コードの復号に失敗しました");
+      const bytes = b64UrlDecode(body);
+      const json = bytesToUtf8(bytes);
+      payload = JSON.parse(json);
+    } catch (e) {
+      throw new Error("記憶の読み込みに失敗しました（形式が違うか壊れています）");
     }
 
-    const sagaName = String(obj.s || "").trim();
-    const monsterId = String(obj.m || "").trim();
-    const nickname = String(obj.n || "");
-    const currentHP = Number(obj.ch || 0);
+    return inflateSoulFromPayload(payload);
+  }
 
-    if (!sagaName) throw new Error("コードにサーガ名がありません");
-    if (!monsterId) throw new Error("コードにモンスターIDがありません");
+  function assertSagaMatch(parsedSoul, sagaInput) {
+    const inSaga = String(sagaInput || "").trim();
+    if (!inSaga) throw new Error("サーガ名が空です");
+    const savedSaga = String(parsedSoul?.sagaName || "").trim();
+    if (!savedSaga) throw new Error("記憶データのサーガ名が不正です");
+    if (savedSaga !== inSaga) throw new Error("サーガ名が一致しません（リボーン失敗）");
+  }
 
-    const def = MONSTERS[monsterId];
-    if (!def) throw new Error("未対応のモンスターIDです");
-
-    const g = Array.isArray(obj.g) ? obj.g : [0, 0, 0, 0, 0];
-    const c = Array.isArray(obj.c) ? obj.c : [0, 0, 0, 0];
-    const w = Array.isArray(obj.w) ? obj.w.slice(0, 15) : def.defaultMoves;
-
-    const soul = {
-      version: 1,
-      sagaName,
-      monsterId,
-
-      speciesName: def.speciesName,
-      nickname,
-
-      attribute: def.attribute,
-      weakAttr: def.weakAttr,
-
-      baseHP: def.baseHP,
-      baseStats: { ...def.baseStats },
-
-      growHP: Number(g[0] || 0),
-      growStats: {
-        fire: Number(g[1] || 0),
-        wind: Number(g[2] || 0),
-        earth: Number(g[3] || 0),
-        water: Number(g[4] || 0),
-      },
-
-      currentHP: currentHP,
-
-      crystals: {
-        volcano: Number(c[0] || 0),
-        tornado: Number(c[1] || 0),
-        earthquake: Number(c[2] || 0),
-        storm: Number(c[3] || 0),
-      },
-
-      moves: w.length === 15 ? w : w.concat(Array.from({ length: Math.max(0, 15 - w.length) }, () => "NONE")),
-
-      envSetting: { ...NEUTRAL_ENV },
-    };
-
-    if (!Number.isFinite(soul.currentHP) || soul.currentHP < 1) soul.currentHP = 1;
-
-    return applyCompatAliases(soul);
+  // expose
+  window.TSP_STATE = {
+    newSoulWindragon: makeNewSoulWindragon,
+    makeSoulCode,
+    parseSoulCode,
+    assertSagaMatch,
   };
-
-  // =========================================================
-  // サーガ名一致チェック
-  // =========================================================
-  TSP_STATE.assertSagaMatch = function (soul, inputSagaName) {
-    const a = String(soul?.sagaName || "").trim();
-    const b = String(inputSagaName || "").trim();
-    if (!a || !b) throw new Error("サーガ名が不正です");
-    if (a !== b) throw new Error("サーガ名が一致しないためリボーン失敗");
-  };
-
-  window.TSP_STATE = TSP_STATE;
 })();
