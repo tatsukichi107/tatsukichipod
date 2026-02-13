@@ -2,17 +2,24 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- safe-area を効かせる（iPhoneのノッチ/アドレスバー対策） -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>【タリスポッド】</title>
   <link rel="stylesheet" href="css/app.css" />
 </head>
 <body>
   <div id="app">
 
-    <!-- ===== ヘッダー ===== -->
+    <!-- ===== ヘッダー（固定表示はCSSで対応） ===== -->
     <header class="header">
       <h1 class="title">【タリスポッド】</h1>
-      <div id="headerSub" class="header-sub">未リボーン</div>
+
+      <!-- 3行表示にする（内容はJSで埋める） -->
+      <div id="headerSub" class="header-sub">
+        <div id="headerLine1" class="header-line"></div>
+        <div id="headerLine2" class="header-line"></div>
+        <div id="headerLine3" class="header-line">未リボーン</div>
+      </div>
     </header>
 
     <!-- ===== 未リボーン画面 ===== -->
@@ -65,7 +72,6 @@
 
       <!-- ===== 環境 ===== -->
       <section id="tab-environment" class="tab-content">
-
         <div class="env-layout">
           <div class="env-neutral">
             <button id="neutralBtn">無属性に戻す</button>
@@ -99,7 +105,6 @@
 
       <!-- ===== レジェンズ ===== -->
       <section id="tab-legendz" class="tab-content">
-
         <div class="field">
           <strong>種族名：</strong>
           <span id="speciesName">ウインドラゴン</span>
@@ -121,7 +126,6 @@
         <div class="field"><strong>カウンター：</strong> <span id="counterStat"></span></div>
         <div class="field"><strong>ダゲキ：</strong> <span id="strikeStat"></span></div>
         <div class="field"><strong>カイフク：</strong> <span id="healStat"></span></div>
-
       </section>
 
       <!-- ===== クリスタル ===== -->
