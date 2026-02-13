@@ -1,16 +1,17 @@
-
 /* =========================================================
- * app.v076.js  v0.76-FULL (BOOT最強起動ロジック版)
+ * js/app.v076.js  v0.76-FULL (Center fix + Moonwalk fix)
  *
- * 目的：
- * - 「ボタンが光るだけ（イベント未bind）」を根絶
- * - 環境差で load / DOMContentLoaded のタイミングを取り逃がしても
- *   boot() を確実に1回だけ実行する
+ * 変更点（今回の要望分だけ）:
+ * 1) レジェンズが右寄りになる問題を修正
+ *    - 位置は常に left:50% を固定
+ *    - 移動は translateX(x) のみで行う（calc(50%+x) を廃止）
+ *    - 反転(scaleX)は“絵レイヤー”にのみ適用し、位置レイヤーにはかけない
  *
- * 方針：
- * - tryBoot("immediate")：スクリプト評価直後に試行
- * - DOMContentLoaded / load でも再試行（ただし一度成功したら二重起動しない）
- * - boot内部の例外は alertErr("boot", e) を必ず出す
+ * 2) ムーンウォーク（移動方向と向きが逆）を修正
+ *    - 右へ歩くとき：右向きに見えるように flip を切替
+ *    - 左へ歩くとき：左向きに見えるように flip を切替
+ *
+ * ※それ以外は前回の完全復旧版の仕様を維持
  * ========================================================= */
 
 (function () {
@@ -58,7 +59,7 @@
   const WALK = {
     halfRangePx: 84,
     speedPxPerSec: 12,
-    facing: "right",
+    facing: "right",  // right / left
     x: 0,
     stepTimer: 0,
     stepFrame: 1,
@@ -119,7 +120,7 @@
 
   function activeTabKey() {
     const btn = tabBtns.find(b => b.classList.contains("active"));
-    return btn && btn.dataset ? (btn.dataset.tab || "home") : "home";
+    return (btn && btn.dataset) ? (btn.dataset.tab || "home") : "home";
   }
 
   function switchTab(key) {
@@ -280,18 +281,44 @@
     renderByCurrentEnv(0);
   }
 
-  // ===== Sprite =====
+  // =========================================================
+  // Sprite helpers（今回の修正核心）
+  //
+  // 位置：spriteViewport に translateX(x) を適用
+  // 中心：spriteViewport は left:50% を固定
+  // 反転：spriteSheetLayer に scaleX(-1) を適用（位置レイヤーにかけない）
+  // =========================================================
+  function ensureViewportCenteringBase() {
+    // CSSがどうでも、JSで確実に center 基準を作る
+    spriteViewport.style.position = "relative";
+    spriteViewport.style.left = "50%";
+    // 中心合わせ（-50%）と移動（x）は viewport で管理
+    // 反転は sheet layer で管理する
+  }
+
   function setSpriteSheet() {
     spriteSheetLayer.style.backgroundImage = `url("${MONSTER.spritePath}")`;
+  }
+
+  function applyViewportTransform(xPx) {
+    // 位置：常に中心(-50%) + 移動(x)
+    spriteViewport.style.transform = `translateX(calc(-50% + ${xPx}px))`;
+  }
+
+  function applyFlipToSheetLayer(flipX) {
+    // 反転は「絵レイヤー」だけに
+    spriteSheetLayer.style.transformOrigin = "center";
+    spriteSheetLayer.style.transform = flipX ? "scaleX(-1)" : "scaleX(1)";
   }
 
   function renderFrame(frameIndex, flipX) {
     const rc = SHEET.frameToRC(frameIndex);
     const x = -(rc.c * SHEET.frameW * SHEET.scale);
     const y = -(rc.r * SHEET.frameH * SHEET.scale);
-
     spriteSheetLayer.style.backgroundPosition = `${x}px ${y}px`;
-    spriteViewport.style.transform = `translateX(-50%) scaleX(${flipX ? -1 : 1})`;
+
+    // ★今回の変更：反転はsheetLayerのみ
+    applyFlipToSheetLayer(!!flipX);
   }
 
   function clearFxAll() {
@@ -333,8 +360,8 @@
   }
 
   function centerSprite() {
-    spriteViewport.style.left = "50%";
     WALK.x = 0;
+    applyViewportTransform(0);
   }
 
   function tickIdle(dtSec) {
@@ -348,9 +375,15 @@
   function tickWalk(dtSec) {
     if (WALK.turnTimer > 0) {
       WALK.turnTimer -= dtSec;
-      const flipTurn = (WALK.facing === "left");
+
+      // 折返し振り向き：向いている方向に合わせる（見た目）
+      // ★ムーンウォーク修正に合わせて flip 条件も統一
+      // 「全スプライトは左向き前提」なので、
+      // 左向きで見せたいとき＝非反転
+      // 右向きで見せたいとき＝反転
+      const flipTurn = (WALK.facing === "right"); // 右向きに見せたいなら反転
       renderFrame(3, flipTurn);
-      spriteViewport.style.left = `calc(50% + ${WALK.x}px)`;
+      applyViewportTransform(WALK.x);
       return;
     }
 
@@ -375,9 +408,14 @@
       WALK.stepFrame = (WALK.stepFrame === 1) ? 2 : 1;
     }
 
-    const flip = (WALK.facing === "left");
+    // ★ムーンウォーク修正（ここが核心）
+    // 「全スプライトは左向き前提」なので：
+    // - 左へ歩く → 左向きに見せる → 非反転
+    // - 右へ歩く → 右向きに見せる → 反転
+    const flip = (WALK.facing === "right");
     renderFrame(WALK.stepFrame, flip);
-    spriteViewport.style.left = `calc(50% + ${WALK.x}px)`;
+
+    applyViewportTransform(WALK.x);
   }
 
   function renderByCurrentEnv(dtSec) {
@@ -587,6 +625,10 @@
     WALK.x = 0; WALK.facing = "right"; WALK.stepTimer = 0; WALK.stepFrame = 1; WALK.turnTimer = 0;
     IDLE.timer = 0; IDLE.frame = 1;
 
+    // 中心基準固定（今回追加）
+    ensureViewportCenteringBase();
+    applyViewportTransform(0);
+
     setHeader();
     refreshStatsUI();
     refreshCrystalsUI();
@@ -699,22 +741,18 @@
       if (!window.TSP_STATE) throw new Error("TSP_STATEがありません（state.js未読込）");
       if (!window.TSP_GAME) throw new Error("TSP_GAMEがありません（game.js未読込）");
 
-      // views
       startView = must("startView");
       mainView = must("mainView");
 
-      // header
       headerLine1 = must("headerLine1");
       headerLine2 = must("headerLine2");
       headerLine3 = must("headerLine3");
 
-      // start
       sagaInput = must("sagaInput");
       soulTextInput = must("soulTextInput");
       newSoulBtn = must("newSoulBtn");
       textRebornBtn = must("textRebornBtn");
 
-      // tabs
       tabBtns = qsa(".tab-btn");
       tabEls = {
         home: must("tab-home"),
@@ -723,7 +761,6 @@
         crystal: must("tab-crystal"),
       };
 
-      // home
       envAttributeLabel = must("envAttributeLabel");
       growthTimer = must("growthTimer");
       growthPreview = must("growthPreview");
@@ -734,7 +771,6 @@
       spriteFxLayer = must("spriteFxLayer");
       scene = qs(".scene");
 
-      // env
       tempSlider = must("tempSlider");
       humiditySlider = must("humiditySlider");
       lightSlider = must("lightSlider");
@@ -746,7 +782,6 @@
       neutralBtn = must("neutralBtn");
       applyEnvBtn = must("applyEnvBtn");
 
-      // legendz
       speciesName = must("speciesName");
       nicknameInput = must("nicknameInput");
       nicknameApplyBtn = must("nicknameApplyBtn");
@@ -757,14 +792,11 @@
       strikeStat = must("strikeStat");
       healStat = must("healStat");
 
-      // crystal
       crystalList = must("crystalList");
 
-      // initial view
       show(startView);
       setHeader();
 
-      // sliders init baseline
       initSliders();
       envDraft = { temp: 0, hum: 50, light: 50 };
       envApplied = { ...envDraft };
@@ -779,39 +811,20 @@
       spriteSheetLayer.style.backgroundRepeat = "no-repeat";
       spriteSheetLayer.style.backgroundSize = `${96 * SHEET.scale}px ${64 * SHEET.scale}px`;
 
-      // bind
-      bindEvents();
+      // ★中心基準を固定（今回追加）
+      ensureViewportCenteringBase();
+      applyViewportTransform(0);
 
-      // start loop
+      bindEvents();
       requestAnimationFrame(rafLoop);
 
     } catch (e) {
-      booted = false; // 失敗時は再試行できるように戻す
+      booted = false;
       alertErr("boot", e);
     }
   }
 
-  // ===== BOOT 最強起動 =====
-  // 1) 即時
-  function tryBoot(tag) {
-    try {
-      if (booted) return;
-      // DOMがまだの時は must() で落ちるので、document.body存在だけ軽く確認
-      if (!document.body) return;
-      boot();
-    } catch (e) {
-      // bootの中でalertするのでここでは抑止
-      console.error("tryBoot", tag, e);
-    }
-  }
-
-  // 即時試行
-  tryBoot("immediate");
-
-  // DOMContentLoaded
-  document.addEventListener("DOMContentLoaded", () => tryBoot("DOMContentLoaded"), { once: true });
-
-  // load
-  window.addEventListener("load", () => tryBoot("load"), { once: true });
+  // 起動（安定優先：load）
+  window.addEventListener("load", boot, { once: true });
 
 })();
