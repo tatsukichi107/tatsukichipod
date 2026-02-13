@@ -1,29 +1,16 @@
+
 /* =========================================================
- * app.v076.js  v0.76-FULL (BOOT確実起動 + 完全復旧版)
+ * app.v076.js  v0.76-FULL (BOOT最強起動ロジック版)
  *
- * 前提：
- * - state.js: window.TSP_STATE が存在（newSoulWindragon / parseSoulCode / assertSagaMatch / makeSoulCode）
- * - game.js : window.TSP_GAME  が存在（TEMP_STEPS / HUM_STEPS / Rank / computeRank / computeMinutePreview / applyOneMinute / maxHP / envAttribute）
- * - index.html のDOM idは、これまでの分割版（4タブ/スプライトViewport/環境UI/カムバックUI）に準拠
+ * 目的：
+ * - 「ボタンが光るだけ（イベント未bind）」を根絶
+ * - 環境差で load / DOMContentLoaded のタイミングを取り逃がしても
+ *   boot() を確実に1回だけ実行する
  *
- * 主要仕様：
- * - 未リボーン：サーガ名入力 + 記憶からリボーン + 新たなソウルドール
- * - リボーン後：ホーム/環境/レジェンズ/クリスタル（下タブ）
- * - 環境：ドラフト→（予想環境表示）→環境決定→3秒冒険→反映→ホーム戻り
- * - 無属性：温度0湿度50（光無視）＝歩行アニメ、育成なし（ホームのみ）
- * - 水中：湿度100（光=水深、光足切り無視）
- * - 通常：光足切りあり（時間帯と一致しないと最悪環境）
- * - 成長：ホーム表示中のみ 1分ごと（回復→成長）
- *   最大HP増加時は currentHP も同時増加
- * - 表情/FX：
- *   超ベスト：喜び(7) + 派手（画面全体）✨♪粒
- *   ベスト：喜び(7) + 音符
- *   良好：通常1/2交互 + 音符
- *   普通：通常1/2交互
- *   最悪：ダウン(8)
- *   無属性：歩行（通常1/2）＋折返しで振り向き(3)0.5秒
- * - カムバック：モーダルで短縮コード表示 + コピー + 「カムバックする」（未リボーンへ） + 「育成に戻る」
- *   ※環境設定は保存しない（再リボーン時は無属性）
+ * 方針：
+ * - tryBoot("immediate")：スクリプト評価直後に試行
+ * - DOMContentLoaded / load でも再試行（ただし一度成功したら二重起動しない）
+ * - boot内部の例外は alertErr("boot", e) を必ず出す
  * ========================================================= */
 
 (function () {
@@ -55,7 +42,6 @@
   const MONSTER = {
     id: "windragon",
     spritePath: "./assets/sprites/windragon.png",
-    // 超ベスト定義（ユーザー最新合意：-45/5）
     superBest: { temp: -45, hum: 5, waterDepth: 50 },
   };
 
@@ -63,76 +49,58 @@
     frameW: 24,
     frameH: 32,
     scale: 3,
-    // 1..8 → (r,c) (2x4)
     frameToRC(i) {
       const idx = Math.max(1, Math.min(8, i)) - 1;
       return { r: Math.floor(idx / 4), c: idx % 4 };
     }
   };
 
-  // walk / idle timing
   const WALK = {
-    halfRangePx: 84,     // 5～10歩くらいの往復に相当
-    speedPxPerSec: 12,   // 落ち着き（速すぎ対策）
-    facing: "right",     // right/left
+    halfRangePx: 84,
+    speedPxPerSec: 12,
+    facing: "right",
     x: 0,
     stepTimer: 0,
-    stepFrame: 1,        // 1 or 2
-    turnTimer: 0         // 折り返し時の振り向き残り秒
+    stepFrame: 1,
+    turnTimer: 0
   };
 
-  const IDLE = {
-    timer: 0,
-    frame: 1
-  };
-
+  const IDLE = { timer: 0, frame: 1 };
   const SUPER_FX = { accum: 0 };
 
   // ===== DOM refs =====
   let startView, mainView;
   let headerLine1, headerLine2, headerLine3;
 
-  // start
   let sagaInput, soulTextInput, newSoulBtn, textRebornBtn;
 
-  // tabs
   let tabBtns;
   let tabEls;
 
-  // home
   let envAttributeLabel, growthTimer, growthPreview, comebackBtn;
   let spriteViewport, spriteSheetLayer, spriteFxLayer;
   let scene;
 
-  // env
   let tempSlider, humiditySlider, lightSlider;
   let tempValue, humidityValue, lightValue, lightLabel;
   let envPreviewLabel, neutralBtn, applyEnvBtn;
 
-  // legendz
   let speciesName, nicknameInput, nicknameApplyBtn, legendzAttribute;
   let hpStat, magicStat, counterStat, strikeStat, healStat;
 
-  // crystal
   let crystalList;
 
-  // comeback modal (created dynamically)
+  // comeback modal
   let comebackModal = null;
 
   // ===== State =====
   let soul = null;
-
   let envDraft = { temp: 0, hum: 50, light: 50 };
   let envApplied = { temp: 0, hum: 50, light: 50 };
-
-  // elem grow counters (周期管理)
   const elemCounter = { fire: 0, wind: 0, earth: 0, water: 0 };
 
-  // tick loop
   let secondsAccum = 0;
   let lastRafMs = null;
-
-  // lock during adventure
   let uiLocked = false;
 
   function lockUI(on) {
@@ -151,7 +119,7 @@
 
   function activeTabKey() {
     const btn = tabBtns.find(b => b.classList.contains("active"));
-    return btn?.dataset?.tab || "home";
+    return btn && btn.dataset ? (btn.dataset.tab || "home") : "home";
   }
 
   function switchTab(key) {
@@ -162,7 +130,7 @@
 
   // ===== Header =====
   function displayNickname(s) {
-    const n = safeText(s?.nickname);
+    const n = safeText(s && s.nickname);
     return n ? n : "未登録";
   }
 
@@ -182,7 +150,13 @@
     headerLine3.textContent = "リボーン中";
   }
 
-  // ===== Background by env attribute (CSS側で色を定義) =====
+  function attrJp(attr) {
+    const meta = window.TSP_GAME && window.TSP_GAME.ATTR_META;
+    if (attr === "neutral") return "無属性";
+    return (meta && meta[attr] && meta[attr].jp) ? meta[attr].jp : String(attr || "");
+  }
+
+  // ===== Background by env attribute =====
   function setHomeBackgroundByEnvAttr(envAttr) {
     if (!scene) return;
     scene.classList.remove("attr-none", "attr-volcano", "attr-tornado", "attr-earthquake", "attr-storm");
@@ -205,10 +179,6 @@
       case R.bad: return "最悪環境";
       default: return "無属性環境";
     }
-  }
-
-  function attrJp(attr) {
-    return window.TSP_GAME.ATTR_META?.[attr]?.jp || (attr === "neutral" ? "無属性" : String(attr || ""));
   }
 
   // ===== Stats UI =====
@@ -249,7 +219,6 @@
     humiditySlider.max = String(window.TSP_GAME.HUM_STEPS.length - 1);
     humiditySlider.step = "1";
 
-    // light: 0/50/100
     lightSlider.min = "0";
     lightSlider.max = "2";
     lightSlider.step = "1";
@@ -281,9 +250,8 @@
     lightValue.textContent = String(envDraft.light);
     updateLightLabelByHumidity();
 
-    // 「予想環境」は属性のみ表示（相性/理由は出さない）
     const attr = window.TSP_GAME.envAttribute(envDraft.temp, envDraft.hum);
-    envPreviewLabel.textContent = attr === "neutral" ? "無属性" : attrJp(attr);
+    envPreviewLabel.textContent = (attr === "neutral") ? "無属性" : attrJp(attr);
   }
 
   // ===== Adventure apply =====
@@ -303,7 +271,7 @@
     overlay.remove();
 
     envApplied = { ...envDraft };
-    secondsAccum = 0; // 反映直後はカウントリセット
+    secondsAccum = 0;
 
     switchTab("home");
     lockUI(false);
@@ -318,9 +286,9 @@
   }
 
   function renderFrame(frameIndex, flipX) {
-    const { r, c } = SHEET.frameToRC(frameIndex);
-    const x = -(c * SHEET.frameW * SHEET.scale);
-    const y = -(r * SHEET.frameH * SHEET.scale);
+    const rc = SHEET.frameToRC(frameIndex);
+    const x = -(rc.c * SHEET.frameW * SHEET.scale);
+    const y = -(rc.r * SHEET.frameH * SHEET.scale);
 
     spriteSheetLayer.style.backgroundPosition = `${x}px ${y}px`;
     spriteViewport.style.transform = `translateX(-50%) scaleX(${flipX ? -1 : 1})`;
@@ -352,8 +320,6 @@
 
     while (SUPER_FX.accum >= interval) {
       SUPER_FX.accum -= interval;
-
-      // 画面いっぱいに派手に（1回に複数）
       for (let k = 0; k < 4; k++) {
         const p = document.createElement("div");
         p.className = "superbest-particle";
@@ -380,10 +346,8 @@
   }
 
   function tickWalk(dtSec) {
-    // 折り返し振り向き（0.5秒）
     if (WALK.turnTimer > 0) {
       WALK.turnTimer -= dtSec;
-      // 振り向きは「右向き=非反転」「左向き=反転」
       const flipTurn = (WALK.facing === "left");
       renderFrame(3, flipTurn);
       spriteViewport.style.left = `calc(50% + ${WALK.x}px)`;
@@ -411,9 +375,6 @@
       WALK.stepFrame = (WALK.stepFrame === 1) ? 2 : 1;
     }
 
-    // 全スプライトは左向き前提：
-    // 右へ歩くとき：正向き（反転なし）
-    // 左へ歩くとき：反転
     const flip = (WALK.facing === "left");
     renderFrame(WALK.stepFrame, flip);
     spriteViewport.style.left = `calc(50% + ${WALK.x}px)`;
@@ -426,7 +387,6 @@
     const info = window.TSP_GAME.computeRank(MONSTER, envApplied, now, soul.attribute);
     const R = window.TSP_GAME.Rank;
 
-    // ラベル（無属性は無属性のみ）
     if (info.rank === R.neutral) {
       envAttributeLabel.textContent = "無属性";
     } else {
@@ -470,21 +430,19 @@
     }
   }
 
-  // ===== Growth preview/timer (ホームのみ進む) =====
+  // ===== Growth preview =====
   function updateGrowthPreviewAndTimer() {
     if (!soul) return;
 
     const now = new Date();
     const info = window.TSP_GAME.computeMinutePreview(soul, MONSTER, envApplied, now, elemCounter);
 
-    // 無属性は非表示（もしくは成長なし）
     if (info.rank === window.TSP_GAME.Rank.neutral) {
       growthTimer.textContent = "環境成長なし";
       growthPreview.textContent = "";
       return;
     }
 
-    // 60秒カウントダウン
     const sec = Math.max(0, Math.floor(60 - secondsAccum));
     const mm = String(Math.floor(sec / 60)).padStart(2, "0");
     const ss = String(sec % 60).padStart(2, "0");
@@ -497,11 +455,7 @@
 
     if (info.elemKey) {
       const jp = { fire: "マホウ", wind: "カウンター", earth: "ダゲキ", water: "カイフク" }[info.elemKey];
-      if (info.elemGrow > 0) parts.push(`${jp}+${info.elemGrow}`);
-      else {
-        // 上限などで0のときも +0 表示
-        parts.push(`${jp}+0`);
-      }
+      parts.push(`${jp}+${info.elemGrow}`);
     }
 
     growthPreview.textContent = parts.join(" / ");
@@ -516,9 +470,7 @@
     modal.innerHTML = `
       <div class="modal">
         <div class="modal-title">ソウルドールの記憶</div>
-
         <textarea id="cbCodeArea" class="modal-code" readonly></textarea>
-
         <div class="modal-actions">
           <button id="cbCopyBtn">ソウルドールの記憶の保存(コピー)</button>
           <button id="cbRebornBtn">カムバックする</button>
@@ -526,10 +478,8 @@
         </div>
       </div>
     `;
-
     document.body.appendChild(modal);
 
-    // close by backdrop tap
     modal.addEventListener("click", (e) => {
       if (e.target === modal) closeComebackModal();
     });
@@ -543,11 +493,7 @@
     const area = $("cbCodeArea");
     area.value = code;
 
-    const copyBtn = $("cbCopyBtn");
-    const rebornBtn = $("cbRebornBtn");
-    const closeBtn = $("cbCloseBtn");
-
-    copyBtn.onclick = async () => {
+    $("cbCopyBtn").onclick = async () => {
       try {
         if (navigator.clipboard && navigator.clipboard.writeText) {
           await navigator.clipboard.writeText(area.value);
@@ -555,30 +501,25 @@
         } else {
           area.focus();
           area.select();
-          alert("この端末は自動コピー非対応です。\nテキストを選択してコピーしてください。");
+          alert("自動コピー非対応です。選択してコピーしてください。");
         }
       } catch (e) {
         alertErr("copy", e);
       }
     };
 
-    // カムバックする＝未リボーンへ（イジェクト相当）
-    rebornBtn.onclick = () => {
+    $("cbRebornBtn").onclick = () => {
       try {
         closeComebackModal();
         soul = null;
         setHeader();
         show(startView);
-        // 体感的に入力は残してよいので sagaInput / soulTextInput は保持
       } catch (e) {
         alertErr("cbRebornBtn", e);
       }
     };
 
-    // 育成に戻る＝閉じるだけ
-    closeBtn.onclick = () => {
-      closeComebackModal();
-    };
+    $("cbCloseBtn").onclick = () => closeComebackModal();
 
     m.classList.add("active");
   }
@@ -602,7 +543,6 @@
 
     const tab = activeTabKey();
 
-    // ホーム表示中のみ育成タイマー進行
     if (soul && tab === "home") {
       secondsAccum += dtSec;
 
@@ -627,7 +567,7 @@
     requestAnimationFrame(rafLoop);
   }
 
-  // ===== Reborn pipelines =====
+  // ===== Reborn pipeline =====
   function resetToNeutralEnv() {
     envDraft = { temp: 0, hum: 50, light: 50 };
     envApplied = { ...envDraft };
@@ -640,13 +580,9 @@
   }
 
   function pipelineAfterReborn() {
-    // 環境は保存しない → 常に無属性へ戻す
     resetToNeutralEnv();
-
-    // sprite
     setSpriteSheet();
 
-    // reset anim
     lastRafMs = null;
     WALK.x = 0; WALK.facing = "right"; WALK.stepTimer = 0; WALK.stepFrame = 1; WALK.turnTimer = 0;
     IDLE.timer = 0; IDLE.frame = 1;
@@ -661,13 +597,11 @@
 
   // ===== Bind events =====
   function bindEvents() {
-    // tabs
     tabBtns.forEach((btn) => {
       btn.addEventListener("click", () => {
         if (uiLocked) return;
         try {
           switchTab(btn.dataset.tab);
-          // ホーム戻りで即更新
           if (btn.dataset.tab === "home") {
             updateGrowthPreviewAndTimer();
             renderByCurrentEnv(0);
@@ -678,7 +612,6 @@
       });
     });
 
-    // start: new
     newSoulBtn.addEventListener("click", () => {
       try {
         const saga = safeText(sagaInput.value);
@@ -690,7 +623,6 @@
       }
     });
 
-    // start: memory
     textRebornBtn.addEventListener("click", () => {
       try {
         const saga = safeText(sagaInput.value);
@@ -709,13 +641,11 @@
       }
     });
 
-    // comeback
     comebackBtn.addEventListener("click", () => {
       try { doComeback(); }
       catch (e) { alertErr("comeback", e); }
     });
 
-    // nickname
     nicknameApplyBtn.addEventListener("click", () => {
       try {
         if (!soul) return;
@@ -726,13 +656,162 @@
       }
     });
 
-    // env sliders
     const onEnvInput = () => {
       try {
         readDraftFromSliders();
         refreshEnvUI();
-      } catch (e)
-      
-  // ★ iPhone/Android差の事故を潰す：load固定
-  window.addEventListener("load", boot);
+      } catch (e) {
+        alertErr("envInput", e);
+      }
+    };
+    tempSlider.addEventListener("input", onEnvInput);
+    humiditySlider.addEventListener("input", onEnvInput);
+    lightSlider.addEventListener("input", onEnvInput);
+
+    neutralBtn.addEventListener("click", () => {
+      try {
+        envDraft = { temp: 0, hum: 50, light: 50 };
+        setSlidersFromDraft();
+        refreshEnvUI();
+      } catch (e) {
+        alertErr("neutralBtn", e);
+      }
+    });
+
+    applyEnvBtn.addEventListener("click", async () => {
+      try {
+        await playAdventureAndApply();
+      } catch (e) {
+        lockUI(false);
+        alertErr("applyEnvBtn", e);
+      }
+    });
+  }
+
+  // ===== Boot =====
+  let booted = false;
+
+  function boot() {
+    if (booted) return;
+    booted = true;
+
+    try {
+      if (!window.TSP_STATE) throw new Error("TSP_STATEがありません（state.js未読込）");
+      if (!window.TSP_GAME) throw new Error("TSP_GAMEがありません（game.js未読込）");
+
+      // views
+      startView = must("startView");
+      mainView = must("mainView");
+
+      // header
+      headerLine1 = must("headerLine1");
+      headerLine2 = must("headerLine2");
+      headerLine3 = must("headerLine3");
+
+      // start
+      sagaInput = must("sagaInput");
+      soulTextInput = must("soulTextInput");
+      newSoulBtn = must("newSoulBtn");
+      textRebornBtn = must("textRebornBtn");
+
+      // tabs
+      tabBtns = qsa(".tab-btn");
+      tabEls = {
+        home: must("tab-home"),
+        environment: must("tab-environment"),
+        legendz: must("tab-legendz"),
+        crystal: must("tab-crystal"),
+      };
+
+      // home
+      envAttributeLabel = must("envAttributeLabel");
+      growthTimer = must("growthTimer");
+      growthPreview = must("growthPreview");
+      comebackBtn = must("comebackBtn");
+
+      spriteViewport = must("spriteViewport");
+      spriteSheetLayer = must("spriteSheetLayer");
+      spriteFxLayer = must("spriteFxLayer");
+      scene = qs(".scene");
+
+      // env
+      tempSlider = must("tempSlider");
+      humiditySlider = must("humiditySlider");
+      lightSlider = must("lightSlider");
+      tempValue = must("tempValue");
+      humidityValue = must("humidityValue");
+      lightValue = must("lightValue");
+      lightLabel = must("lightLabel");
+      envPreviewLabel = must("envPreviewLabel");
+      neutralBtn = must("neutralBtn");
+      applyEnvBtn = must("applyEnvBtn");
+
+      // legendz
+      speciesName = must("speciesName");
+      nicknameInput = must("nicknameInput");
+      nicknameApplyBtn = must("nicknameApplyBtn");
+      legendzAttribute = must("legendzAttribute");
+      hpStat = must("hpStat");
+      magicStat = must("magicStat");
+      counterStat = must("counterStat");
+      strikeStat = must("strikeStat");
+      healStat = must("healStat");
+
+      // crystal
+      crystalList = must("crystalList");
+
+      // initial view
+      show(startView);
+      setHeader();
+
+      // sliders init baseline
+      initSliders();
+      envDraft = { temp: 0, hum: 50, light: 50 };
+      envApplied = { ...envDraft };
+      setSlidersFromDraft();
+      refreshEnvUI();
+
+      // sprite sizing
+      spriteViewport.style.width = (SHEET.frameW * SHEET.scale) + "px";
+      spriteViewport.style.height = (SHEET.frameH * SHEET.scale) + "px";
+      spriteSheetLayer.style.width = (96 * SHEET.scale) + "px";
+      spriteSheetLayer.style.height = (64 * SHEET.scale) + "px";
+      spriteSheetLayer.style.backgroundRepeat = "no-repeat";
+      spriteSheetLayer.style.backgroundSize = `${96 * SHEET.scale}px ${64 * SHEET.scale}px`;
+
+      // bind
+      bindEvents();
+
+      // start loop
+      requestAnimationFrame(rafLoop);
+
+    } catch (e) {
+      booted = false; // 失敗時は再試行できるように戻す
+      alertErr("boot", e);
+    }
+  }
+
+  // ===== BOOT 最強起動 =====
+  // 1) 即時
+  function tryBoot(tag) {
+    try {
+      if (booted) return;
+      // DOMがまだの時は must() で落ちるので、document.body存在だけ軽く確認
+      if (!document.body) return;
+      boot();
+    } catch (e) {
+      // bootの中でalertするのでここでは抑止
+      console.error("tryBoot", tag, e);
+    }
+  }
+
+  // 即時試行
+  tryBoot("immediate");
+
+  // DOMContentLoaded
+  document.addEventListener("DOMContentLoaded", () => tryBoot("DOMContentLoaded"), { once: true });
+
+  // load
+  window.addEventListener("load", () => tryBoot("load"), { once: true });
+
 })();
