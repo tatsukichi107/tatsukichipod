@@ -732,3 +732,7 @@
         readDraftFromSliders();
         refreshEnvUI();
       } catch (e)
+      
+  // ★ iPhone/Android差の事故を潰す：load固定
+  window.addEventListener("load", boot);
+})();
