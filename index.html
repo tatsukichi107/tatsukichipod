@@ -5,7 +5,9 @@
   <!-- safe-area を効かせる（iPhoneのノッチ/アドレスバー対策） -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>【タリスポッド】</title>
-  <link rel="stylesheet" href="css/app.css" />
+
+  <!-- ★ キャッシュ破り：更新のたびに v= の値を変えると確実 -->
+  <link rel="stylesheet" href="css/app.css?v=20260214c" />
 </head>
 <body>
   <div id="app">
@@ -150,16 +152,14 @@
       <h3>ソウルドールの記憶</h3>
       <textarea id="modalSoulText" readonly></textarea>
       <button id="copySoulBtn">ソウルドールの記憶の保存（コピー）</button>
-      <!-- 役割：イジェクト（未リボーンへ） -->
       <button id="ejectBtn">カムバックする</button>
-      <!-- 役割：モーダル閉じる（育成継続） -->
       <button id="cancelComebackBtn">育成に戻る</button>
     </div>
   </div>
 
-  <!-- ===== Scripts（QR廃止） ===== -->
-  <script src="js/state.js"></script>
-  <script src="js/game.js"></script>
-  <script src="js/app.js"></script>
+  <!-- ===== Scripts（★ キャッシュ破り） ===== -->
+  <script src="js/state.js?v=20260214c"></script>
+  <script src="js/game.js?v=20260214c"></script>
+  <script src="js/app.js?v=20260214c"></script>
 </body>
 </html>
