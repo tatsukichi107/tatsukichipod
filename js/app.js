@@ -1,16 +1,19 @@
 /* =========================================================
- * js/app.js  v0.77-FX3
- * 目的：環境ランク別の演出を強化
- * - 超ベスト：♪✨が画面中を飛び交う ＋ 背景ピカピカ（CSS: .fx-superbest）
- * - ベスト：♪が降り注ぐ ＋ 背景ピカピカ（CSS: .fx-best）
- * - 良好：♪がパラパラ（CSS: .fx-good）
- * - 最悪：暗い雰囲気でズーン（CSS: .fx-bad）
+ * js/app.js  v0.77-FX4
+ * 目的：♪/✨パーティクルが「全然出ない」問題を修正
  *
- * 変更点（JS）:
- * - sceneに fx-* クラスを付け替え
- * - scene全体にパーティクルを生成（tsp-particle + tsp-fly/fall/drift）
- * - 既存の superbest-particle / superbest-burst は廃止（互換はCSS側に残してもOK）
- * - 既存の alert撤廃／モーダル・トーストは維持
+ * 原因：
+ * - renderByCurrentEnv() 内で clearFxAll() を毎フレーム呼び、
+ *   生成したパーティクルを即削除してしまっていたため視認できない
+ *
+ * 修正：
+ * - FXの全消去は「環境ランクが変化した時」だけ実施
+ * - ランクが同じ間はパーティクルを消さず、自然消滅(setTimeout)に任せる
+ * - sceneの fx-* クラスもランク変化時のみ付け替え
+ *
+ * 注意：
+ * - 既存仕様（表情/歩行/育成/モーダル等）はノータッチ方針
+ * - ただし clearFxAll() の呼び方のみ最小変更
  * ========================================================= */
 
 (function () {
@@ -151,9 +154,9 @@
 
   // ===== Particle emit accumulators =====
   const FX = {
-    superAcc: 0,  // 超ベスト：飛び交う
-    bestAcc: 0,   // ベスト：降る
-    goodAcc: 0,   // 良好：パラパラ
+    superAcc: 0,
+    bestAcc: 0,
+    goodAcc: 0,
   };
 
   // ===== DOM refs =====
@@ -199,6 +202,10 @@
 
   // ===== Skills event guard =====
   let skillsClickBound = false;
+
+  // ★FX state tracking（ここが今回の肝）
+  let lastRankKey = null;   // e.g. "neutral" / "superbest" etc.
+  let lastEnvAttr = null;   // "volcano" etc.
 
   function lockUI(on) {
     uiLocked = on;
@@ -461,14 +468,15 @@
     qsa(".tsp-particle").forEach(p => p.remove());
   }
 
-  function clearFxAll() {
+  // ★注意：粒を全消しするのは「ランク変化時だけ」にする
+  function clearFxAllHard() {
     spriteFxLayer.innerHTML = "";
     clearSceneFxClasses();
     removeParticles();
   }
 
-  // note-only (legacy)
-  function setNoteFx() {
+  // legacy note-only
+  function setNoteFxLegacy() {
     spriteFxLayer.innerHTML = "";
     const n = document.createElement("div");
     n.className = "fx-note-only";
@@ -500,8 +508,7 @@
 
     scene.appendChild(p);
 
-    // remove after animation
-    const rmMs = Math.max(900, dur * 1000 + 200);
+    const rmMs = Math.max(900, dur * 1000 + 220);
     setTimeout(() => { try { p.remove(); } catch {} }, rmMs);
   }
 
@@ -515,7 +522,6 @@
     while (FX.superAcc >= interval) {
       FX.superAcc -= interval;
 
-      // 1tickで複数発生
       const count = 6;
       for (let i = 0; i < count; i++) {
         const isSpark = Math.random() > 0.52;
@@ -524,40 +530,35 @@
         const xPct = rand(2, 98);
         const yPct = rand(2, 98);
 
-        // 飛ぶ方向もバラけさせる
         const dx = rand(-140, 140);
-        const dy = rand(-220, 80); // 上に舞う寄り
+        const dy = rand(-220, 80);
         const rot = rand(-30, 30);
         const dur = rand(1.0, 1.9);
         const scale = rand(0.9, 1.35);
         const sizePx = isSpark ? rand(16, 24) : rand(14, 22);
 
-        spawnParticle({
-          text, xPct, yPct,
-          cls: "tsp-fly",
-          dur, dx, dy, rot, scale, sizePx
-        });
+        spawnParticle({ text, xPct, yPct, cls: "tsp-fly", dur, dx, dy, rot, scale, sizePx });
       }
     }
   }
 
-  // ベスト：♪が降り注ぐ（上から落下、✨は少なめ）
+  // ベスト：♪が降り注ぐ
   function emitBest(dtSec) {
     if (!scene) return;
     scene.classList.add("fx-best");
 
     FX.bestAcc += dtSec;
-    const interval = 0.12; // 中頻度
+    const interval = 0.12;
     while (FX.bestAcc >= interval) {
       FX.bestAcc -= interval;
 
       const count = 4;
       for (let i = 0; i < count; i++) {
-        const isSpark = Math.random() > 0.86; // ✨少
+        const isSpark = Math.random() > 0.86;
         const text = isSpark ? "✨" : "♪";
 
         const xPct = rand(4, 96);
-        const yPct = rand(-8, 6); // 上から
+        const yPct = rand(-8, 6);
         const dx = rand(-22, 22);
         const dy = rand(220, 340);
         const rot = rand(-12, 12);
@@ -565,22 +566,18 @@
         const scale = rand(0.9, 1.2);
         const sizePx = isSpark ? rand(16, 22) : rand(14, 20);
 
-        spawnParticle({
-          text, xPct, yPct,
-          cls: "tsp-fall",
-          dur, dx, dy, rot, scale, sizePx
-        });
+        spawnParticle({ text, xPct, yPct, cls: "tsp-fall", dur, dx, dy, rot, scale, sizePx });
       }
     }
   }
 
-  // 良好：♪がパラパラ（少量・遅め）
+  // 良好：♪がパラパラ
   function emitGood(dtSec) {
     if (!scene) return;
     scene.classList.add("fx-good");
 
     FX.goodAcc += dtSec;
-    const interval = 0.45; // 低頻度
+    const interval = 0.45;
     while (FX.goodAcc >= interval) {
       FX.goodAcc -= interval;
 
@@ -596,11 +593,7 @@
         const scale = rand(0.9, 1.15);
         const sizePx = rand(13, 18);
 
-        spawnParticle({
-          text, xPct, yPct,
-          cls: "tsp-drift",
-          dur, dx, dy, rot, scale, sizePx
-        });
+        spawnParticle({ text, xPct, yPct, cls: "tsp-drift", dur, dx, dy, rot, scale, sizePx });
       }
     }
   }
@@ -666,6 +659,25 @@
     homeNeutralBtn.style.display = showIt ? "block" : "none";
   }
 
+  // ★ランク変化時だけクリアするためのキー
+  function makeRankKey(info) {
+    // rankだけでなく、背景色用のenvAttrも変わり得るので合わせて判定
+    return `${String(info.rank)}|${String(info.envAttr)}`;
+  }
+
+  function onRankChanged(newKey, info) {
+    // 硬クリア（粒全消し・fxクラス入れ替え）
+    clearFxAllHard();
+
+    // accum reset（切替直後の出方を安定させる）
+    FX.superAcc = 0;
+    FX.bestAcc = 0;
+    FX.goodAcc = 0;
+
+    lastRankKey = newKey;
+    lastEnvAttr = info.envAttr;
+  }
+
   function renderByCurrentEnv(dtSec) {
     if (!soul) return;
 
@@ -682,10 +694,12 @@
 
     setHomeBackgroundByEnvAttr(info.envAttr);
 
-    // ★毎フレームのクリアは重いが、現状の設計に合わせて維持
-    // 粒は短命＋数も制御しているので体感は軽いはず（重い場合はrank変更時だけに最適化可能）
-    clearFxAll();
+    const key = makeRankKey(info);
+    if (key !== lastRankKey) {
+      onRankChanged(key, info);
+    }
 
+    // ★ここでは毎フレーム消さない
     updateHomeNeutralButtonVisibility(info);
 
     // ランク別 表情・演出
@@ -728,6 +742,7 @@
 
       case R.neutral:
       default:
+        // 無属性は歩行（FXはなし、ただし切替時にはhard clear済み）
         tickWalk(dtSec);
         break;
     }
@@ -924,6 +939,11 @@
   function resetToNeutralEnvApplied() {
     envApplied = { temp: 0, hum: 50, light: 50 };
     secondsAccum = 0;
+
+    // rank tracking reset（次回描画で確実に切替扱い）
+    lastRankKey = null;
+    lastEnvAttr = null;
+
     updateGrowthPreviewAndTimer();
     renderByCurrentEnv(0);
   }
@@ -951,10 +971,12 @@
     WALK.x = 0; WALK.facing = "right"; WALK.stepTimer = 0; WALK.stepFrame = 1; WALK.turnTimer = 0;
     IDLE.timer = 0; IDLE.frame = 1;
 
-    // FX accum reset
     FX.superAcc = 0;
     FX.bestAcc = 0;
     FX.goodAcc = 0;
+
+    lastRankKey = null;
+    lastEnvAttr = null;
 
     setHeader();
     refreshStatsUI();
@@ -977,6 +999,7 @@
         if (uiLocked) return;
         try {
           switchTab(btn.dataset.tab);
+
           if (btn.dataset.tab === "home") {
             updateGrowthPreviewAndTimer();
             renderByCurrentEnv(0);
@@ -1082,6 +1105,11 @@
     applyEnvBtn.addEventListener("click", async () => {
       try {
         await playAdventureAndApply();
+
+        // 環境確定後は必ず切替扱いにして、FXが出ない事故を防ぐ
+        lastRankKey = null;
+        lastEnvAttr = null;
+
       } catch (e) {
         lockUI(false);
         showError("applyEnvBtn", e);
