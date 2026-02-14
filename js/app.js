@@ -1,115 +1,130 @@
 /* =========================================================
- * app.js（完全版・チェックポイント診断入り v0.76）
+ * js/app.js  v0.77-FX3
+ * 目的：環境ランク別の演出を強化
+ * - 超ベスト：♪✨が画面中を飛び交う ＋ 背景ピカピカ（CSS: .fx-superbest）
+ * - ベスト：♪が降り注ぐ ＋ 背景ピカピカ（CSS: .fx-best）
+ * - 良好：♪がパラパラ（CSS: .fx-good）
+ * - 最悪：暗い雰囲気でズーン（CSS: .fx-bad）
  *
- * 目的：
- * - 「新規/記憶でリボーンできない」＝処理途中で落ちて無反応になる問題を、
- *   スマホだけでも原因特定できるようにする。
- *
- * 仕様：
- * - 主要操作（新規/記憶/環境決定/カムバック）を try/catch で包む
- * - どこまで進んだか「チェックポイント」を画面下に表示
- * - 落ちたら alert で必ず理由を出す
- *
- * 注意：
- * - チェックポイント表示はデバッグ用。復旧したら消せる。
+ * 変更点（JS）:
+ * - sceneに fx-* クラスを付け替え
+ * - scene全体にパーティクルを生成（tsp-particle + tsp-fly/fall/drift）
+ * - 既存の superbest-particle / superbest-burst は廃止（互換はCSS側に残してもOK）
+ * - 既存の alert撤廃／モーダル・トーストは維持
  * ========================================================= */
 
 (function () {
   "use strict";
 
   const $ = (id) => document.getElementById(id);
+  const qsa = (sel) => Array.from(document.querySelectorAll(sel));
 
-  // ===== Debug: checkpoint banner =====
-  let cpBox = null;
-  function ensureCpBox() {
-    if (cpBox) return cpBox;
-    cpBox = document.createElement("div");
-    cpBox.style.position = "fixed";
-    cpBox.style.left = "0";
-    cpBox.style.right = "0";
-    cpBox.style.bottom = "0";
-    cpBox.style.zIndex = "99999";
-    cpBox.style.padding = "8px 10px";
-    cpBox.style.fontSize = "12px";
-    cpBox.style.lineHeight = "1.35";
-    cpBox.style.color = "white";
-    cpBox.style.background = "rgba(0,0,0,0.75)";
-    cpBox.style.borderTop = "1px solid rgba(255,255,255,0.2)";
-    cpBox.textContent = "CP: booting…";
-    document.body.appendChild(cpBox);
-    return cpBox;
-  }
-  function cp(msg) {
-    ensureCpBox().textContent = "CP: " + msg;
-  }
-  function fail(where, err) {
-    const m = (err && (err.message || String(err))) || "unknown error";
-    cp(`FAIL @ ${where}: ${m}`);
-    alert(`エラー発生（${where}）\n${m}`);
-    console.error(where, err);
-  }
-
-  // ===== Hard requirements =====
   function must(id) {
     const el = $(id);
     if (!el) throw new Error(`DOM missing: #${id}`);
     return el;
   }
-  function assertDeps() {
-    if (!window.TSP_STATE) throw new Error("TSP_STATE is undefined（state.jsが読み込めていない可能性）");
-    if (!window.TSP_GAME) throw new Error("TSP_GAME is undefined（game.jsが読み込めていない可能性）");
-    if (!Array.isArray(window.TSP_GAME.TEMP_STEPS)) throw new Error("TSP_GAME.TEMP_STEPS がありません");
-    if (!Array.isArray(window.TSP_GAME.HUM_STEPS)) throw new Error("TSP_GAME.HUM_STEPS がありません");
+
+  function safeText(s) {
+    return String(s ?? "").replace(/\s+/g, " ").trim();
   }
 
-  // ===== DOM refs =====
-  let startView, mainView;
-  let headerLine1, headerLine2, headerLine3;
+  // ===== lightweight UI notice (no native dialogs) =====
+  let noticeModal = null;
+  let toastEl = null;
+  let toastTimer = null;
 
-  let sagaInput, newSoulBtn, soulTextInput, textRebornBtn;
+  function ensureToast() {
+    if (toastEl) return toastEl;
+    const el = document.createElement("div");
+    el.id = "tspToast";
+    el.style.position = "fixed";
+    el.style.left = "50%";
+    el.style.bottom = "calc(84px + env(safe-area-inset-bottom, 0px))";
+    el.style.transform = "translateX(-50%)";
+    el.style.zIndex = "120";
+    el.style.maxWidth = "92vw";
+    el.style.padding = "10px 12px";
+    el.style.borderRadius = "14px";
+    el.style.border = "1px solid rgba(255,255,255,0.14)";
+    el.style.background = "rgba(15,18,28,0.92)";
+    el.style.backdropFilter = "blur(10px)";
+    el.style.color = "rgba(255,255,255,0.92)";
+    el.style.fontSize = "13px";
+    el.style.lineHeight = "1.45";
+    el.style.boxShadow = "0 14px 28px rgba(0,0,0,0.35)";
+    el.style.display = "none";
+    el.style.whiteSpace = "pre-wrap";
+    document.body.appendChild(el);
+    toastEl = el;
+    return el;
+  }
 
-  let tabBtns, tabEls;
+  function toast(msg, ms = 1400) {
+    try {
+      const el = ensureToast();
+      el.textContent = String(msg ?? "");
+      el.style.display = "block";
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        el.style.display = "none";
+      }, ms);
+    } catch {
+      console.error("toast failed", msg);
+    }
+  }
 
-  // home
-  let envAttributeLabel, growthTimer, growthPreview;
-  let comebackBtn;
-  let spriteViewport, spriteSheetLayer, spriteFxLayer;
+  function ensureNoticeModal() {
+    if (noticeModal) return noticeModal;
 
-  // env
-  let tempSlider, humiditySlider, lightSlider;
-  let tempValue, humidityValue, lightValue;
-  let lightLabel;
-  let envPreviewLabel, neutralBtn, applyEnvBtn;
+    const modal = document.createElement("div");
+    modal.className = "modal-backdrop";
+    modal.innerHTML = `
+      <div class="modal">
+        <div id="nzTitle" class="modal-title">お知らせ</div>
+        <div id="nzBody" style="color:var(--muted); font-size:13px; line-height:1.55; white-space:pre-wrap;"></div>
+        <div class="modal-actions" style="margin-top:12px;">
+          <button id="nzOkBtn">OK</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
 
-  // legendz
-  let speciesName, nicknameInput, nicknameApplyBtn, legendzAttribute;
-  let hpStat, magicStat, counterStat, strikeStat, healStat;
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) closeNotice();
+    });
 
-  // crystal
-  let crystalList;
+    noticeModal = modal;
+    $("nzOkBtn").onclick = () => closeNotice();
 
-  // modal
-  let soulModal, modalSoulText, copySoulBtn, ejectBtn, cancelComebackBtn;
+    return noticeModal;
+  }
 
-  // ===== State =====
-  let soul = null;
+  function openNotice(title, body) {
+    const m = ensureNoticeModal();
+    $("nzTitle").textContent = String(title ?? "お知らせ");
+    $("nzBody").textContent = String(body ?? "");
+    m.classList.add("active");
+  }
 
-  // 環境（ドラフト・反映）
-  let envDraft = { temp: 0, hum: 50, light: 50 };
-  let envApplied = { temp: 0, hum: 50, light: 50 };
+  function closeNotice() {
+    if (!noticeModal) return;
+    noticeModal.classList.remove("active");
+  }
 
-  // 成長カウンタ（属性ごとの周期）
-  const elemCounter = { fire: 0, wind: 0, earth: 0, water: 0 };
+  function showError(where, e) {
+    const msg = (e && (e.message || String(e))) || "unknown";
+    console.error(where, e);
+    openNotice("エラー", `（${where}）\n${msg}`);
+  }
 
-  // タイマー
-  let secondsAccum = 0;
-  let lastRafMs = null;
+  function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-  // ===== Monster / Sprite =====
+  // ===== Monster / sprite config =====
   const MONSTER = {
     id: "windragon",
-    spritePath: "assets/sprites/windragon.png",
-    superBest: { temp: -45, hum: 5, waterDepth: 50 }
+    spritePath: "./assets/sprites/windragon.png",
+    superBest: { temp: -45, hum: 5, waterDepth: 50 },
   };
 
   const SHEET = {
@@ -122,56 +137,115 @@
     }
   };
 
-  // Walk/Idle state
   const WALK = {
-    halfRangePx: 80,
-    speedPxPerSec: 20,
+    halfRangePx: 84,
+    speedPxPerSec: 12,
     facing: "right",
     x: 0,
     stepTimer: 0,
     stepFrame: 1,
     turnTimer: 0
   };
+
   const IDLE = { timer: 0, frame: 1 };
 
-  // FX emitter
-  const superBestEmitter = { accum: 0 };
+  // ===== Particle emit accumulators =====
+  const FX = {
+    superAcc: 0,  // 超ベスト：飛び交う
+    bestAcc: 0,   // ベスト：降る
+    goodAcc: 0,   // 良好：パラパラ
+  };
 
-  // ===== View helpers =====
+  // ===== DOM refs =====
+  let startView, mainView;
+  let headerLine1, headerLine2, headerLine3;
+
+  let sagaInput, soulTextInput, newSoulBtn, textRebornBtn;
+
+  let tabBtns;
+  let tabEls;
+
+  let envAttributeLabel, growthTimer, growthPreview, comebackBtn;
+  let homeNeutralBtn;
+
+  let spriteMover, spriteViewport, spriteSheetLayer, spriteFxLayer;
+  let scene;
+
+  let tempSlider, humiditySlider;
+  let tempValue, humidityValue, lightValue, lightLabel;
+  let envPreviewLabel, neutralBtn, applyEnvBtn;
+
+  let lightBtn0, lightBtn50, lightBtn100;
+
+  let speciesName, nicknameInput, nicknameApplyBtn, legendzAttribute;
+  let hpStat, magicStat, counterStat, strikeStat, healStat;
+
+  let skillSlots;
+  let crystalList;
+
+  // ===== Modals =====
+  let comebackModal = null;
+  let confirmModal = null;
+
+  // ===== State =====
+  let soul = null;
+  let envDraft = { temp: 0, hum: 50, light: 50 };
+  let envApplied = { temp: 0, hum: 50, light: 50 };
+  const elemCounter = { fire: 0, wind: 0, earth: 0, water: 0 };
+
+  let secondsAccum = 0;
+  let lastRafMs = null;
+  let uiLocked = false;
+
+  // ===== Skills event guard =====
+  let skillsClickBound = false;
+
+  function lockUI(on) {
+    uiLocked = on;
+    if (tabBtns) tabBtns.forEach(b => (b.disabled = on));
+    if (applyEnvBtn) applyEnvBtn.disabled = on;
+    if (neutralBtn) neutralBtn.disabled = on;
+    if (homeNeutralBtn) homeNeutralBtn.disabled = on;
+  }
+
+  function setUnrebornFlag(isUnreborn) {
+    document.body.classList.toggle("unreborn", !!isUnreborn);
+  }
+
+  // ===== View / Tab =====
   function show(view) {
     startView.classList.remove("active");
     mainView.classList.remove("active");
     view.classList.add("active");
+    setUnrebornFlag(view === startView);
   }
 
   function activeTabKey() {
-    const btn = tabBtns.find((b) => b.classList.contains("active"));
-    return btn?.dataset?.tab || "home";
+    const btn = tabBtns.find(b => b.classList.contains("active"));
+    return (btn && btn.dataset) ? (btn.dataset.tab || "home") : "home";
   }
 
   function switchTab(key) {
-    tabBtns.forEach((b) => b.classList.toggle("active", b.dataset.tab === key));
-    Object.values(tabEls).forEach((t) => t.classList.remove("active"));
+    tabBtns.forEach(b => b.classList.toggle("active", b.dataset.tab === key));
+    Object.values(tabEls).forEach(el => el.classList.remove("active"));
     tabEls[key].classList.add("active");
   }
 
+  // ===== Header =====
   function displayNickname(s) {
-    const nick = String(s.nickname || "").trim();
-    return nick ? nick : "未登録";
+    const n = safeText(s && s.nickname);
+    return n ? n : "未登録";
   }
 
   function setHeader() {
-    if (!headerLine1 || !headerLine2 || !headerLine3) return;
-
     if (!soul) {
       headerLine1.textContent = "";
       headerLine2.textContent = "";
       headerLine3.textContent = "未リボーン";
       return;
     }
-
-    const saga = String(soul.sagaName || "").trim();
-    const sp = String(soul.speciesName || "").trim();
+    const saga = safeText(soul.sagaName);
+    const sp = safeText(soul.speciesName);
     const nick = displayNickname(soul);
 
     headerLine1.textContent = `サーガ名：${saga}`;
@@ -179,11 +253,14 @@
     headerLine3.textContent = "リボーン中";
   }
 
-  // ===== Background by env attribute =====
-  function setHomeBackgroundByEnvAttr(envAttr) {
-    const scene = document.querySelector(".scene");
-    if (!scene) return;
+  function attrJp(attr) {
+    const meta = window.TSP_GAME && window.TSP_GAME.ATTR_META;
+    if (attr === "neutral") return "無属性";
+    return (meta && meta[attr] && meta[attr].jp) ? meta[attr].jp : String(attr || "");
+  }
 
+  function setHomeBackgroundByEnvAttr(envAttr) {
+    if (!scene) return;
     scene.classList.remove("attr-none", "attr-volcano", "attr-tornado", "attr-earthquake", "attr-storm");
     switch (envAttr) {
       case "volcano": scene.classList.add("attr-volcano"); break;
@@ -194,7 +271,7 @@
     }
   }
 
-  function rankLabelNew(rank) {
+  function rankLabel(rank) {
     const R = window.TSP_GAME.Rank;
     switch (rank) {
       case R.superbest: return "超ベスト環境";
@@ -202,7 +279,6 @@
       case R.good: return "良好環境";
       case R.normal: return "普通環境";
       case R.bad: return "最悪環境";
-      case R.neutral:
       default: return "無属性環境";
     }
   }
@@ -213,7 +289,7 @@
 
     speciesName.textContent = soul.speciesName;
     nicknameInput.value = soul.nickname || "";
-    legendzAttribute.textContent = window.TSP_GAME.ATTR_META[soul.attribute]?.jp || soul.attribute;
+    legendzAttribute.textContent = attrJp(soul.attribute);
 
     const mx = window.TSP_GAME.maxHP(soul);
     hpStat.textContent = `${soul.currentHP}/${mx}`;
@@ -235,6 +311,46 @@
     `;
   }
 
+  // ===== Skills (dummy) =====
+  const DUMMY_SKILLS = Array.from({ length: 15 }, (_, i) => ({
+    id: `skill_${i + 1}`,
+    name: `ワザ${String(i + 1).padStart(2, "0")}`,
+    meta: (i % 3 === 0) ? "攻撃" : (i % 3 === 1 ? "補助" : "回復"),
+  }));
+
+  function renderSkillsUI() {
+    if (!skillSlots) return;
+    skillSlots.innerHTML = "";
+    DUMMY_SKILLS.forEach((sk, idx) => {
+      const row = document.createElement("div");
+      row.className = "skill-slot";
+      row.innerHTML = `
+        <div class="left">
+          <div class="name">${sk.name}</div>
+          <div class="meta">${sk.meta} / Slot ${idx + 1}</div>
+        </div>
+        <button type="button" class="try-btn" data-skill="${sk.id}">試し撃ち</button>
+      `;
+      skillSlots.appendChild(row);
+    });
+  }
+
+  function bindSkillsClickOnce() {
+    if (!skillSlots || skillsClickBound) return;
+    skillsClickBound = true;
+
+    skillSlots.addEventListener("click", (e) => {
+      const btn = e.target && e.target.closest && e.target.closest(".try-btn");
+      if (!btn) return;
+
+      const id = btn.getAttribute("data-skill");
+      const sk = DUMMY_SKILLS.find(s => s.id === id);
+      if (!sk) return;
+
+      openNotice("試し撃ち", `${sk.name} を試し撃ち！`);
+    });
+  }
+
   // ===== Env sliders =====
   function initSliders() {
     tempSlider.min = "0";
@@ -244,26 +360,30 @@
     humiditySlider.min = "0";
     humiditySlider.max = String(window.TSP_GAME.HUM_STEPS.length - 1);
     humiditySlider.step = "1";
-
-    lightSlider.min = "0";
-    lightSlider.max = "2";
-    lightSlider.step = "1";
   }
 
-  function readDraftFromSliders() {
+  function setLightDraft(value) {
+    envDraft.light = value;
+    lightValue.textContent = String(value);
+
+    [lightBtn0, lightBtn50, lightBtn100].forEach(b => b.classList.remove("active"));
+    if (value === 0) lightBtn0.classList.add("active");
+    else if (value === 50) lightBtn50.classList.add("active");
+    else lightBtn100.classList.add("active");
+  }
+
+  function readDraftFromSlidersOnly() {
     const t = window.TSP_GAME.TEMP_STEPS[Number(tempSlider.value)] ?? 0;
     const h = window.TSP_GAME.HUM_STEPS[Number(humiditySlider.value)] ?? 50;
-    const lIdx = Number(lightSlider.value);
-    const l = lIdx === 0 ? 0 : lIdx === 1 ? 50 : 100;
-    envDraft = { temp: t, hum: h, light: l };
+    envDraft.temp = t;
+    envDraft.hum = h;
   }
 
   function setSlidersFromDraft() {
-    const tIdx = window.TSP_GAME.TEMP_STEPS.indexOf(envDraft.temp);
-    const hIdx = window.TSP_GAME.HUM_STEPS.indexOf(envDraft.hum);
+    const tIdx = window.TSP_GAME.TEMP_STEPS.indexOf(Number(envDraft.temp));
+    const hIdx = window.TSP_GAME.HUM_STEPS.indexOf(Number(envDraft.hum));
     tempSlider.value = String(Math.max(0, tIdx));
     humiditySlider.value = String(Math.max(0, hIdx));
-    lightSlider.value = String(envDraft.light === 0 ? 0 : envDraft.light === 50 ? 1 : 2);
   }
 
   function updateLightLabelByHumidity() {
@@ -273,24 +393,16 @@
   function refreshEnvUI() {
     tempValue.textContent = `${envDraft.temp}℃`;
     humidityValue.textContent = `${envDraft.hum}％`;
-    lightValue.textContent = `${envDraft.light}`;
     updateLightLabelByHumidity();
 
     const attr = window.TSP_GAME.envAttribute(envDraft.temp, envDraft.hum);
-    envPreviewLabel.textContent = window.TSP_GAME.ATTR_META[attr]?.jp || "無属性";
+    envPreviewLabel.textContent = (attr === "neutral") ? "無属性" : attrJp(attr);
   }
 
   // ===== Adventure apply =====
-  function lockUI(locked) {
-    tabBtns.forEach((b) => (b.disabled = locked));
-    applyEnvBtn.disabled = locked;
-    neutralBtn.disabled = locked;
-  }
-
-  function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
-
   async function playAdventureAndApply() {
-    cp("applyEnv: lockUI");
+    if (uiLocked) return;
+
     lockUI(true);
 
     const tabEnv = tabEls.environment;
@@ -299,44 +411,63 @@
     overlay.textContent = "冒険中…";
     tabEnv.appendChild(overlay);
 
-    cp("applyEnv: waiting 3s");
     await sleep(3000);
 
     overlay.remove();
 
-    cp("applyEnv: commit envApplied");
     envApplied = { ...envDraft };
+    secondsAccum = 0;
 
     switchTab("home");
     lockUI(false);
 
     updateGrowthPreviewAndTimer();
     renderByCurrentEnv(0);
-
-    cp("applyEnv: done");
   }
 
-  // ===== Sprite render =====
+  // =========================================================
+  // Sprite / Rendering
+  // =========================================================
   function setSpriteSheet() {
     spriteSheetLayer.style.backgroundImage = `url("${MONSTER.spritePath}")`;
+    spriteSheetLayer.style.transform = "";
+    spriteMover.style.transform = "translateX(0px)";
+    spriteViewport.style.transform = "scaleX(1)";
   }
 
-  function renderFrame(frameIndex, flipX) {
-    const { r, c } = SHEET.frameToRC(frameIndex);
-    const x = -(c * SHEET.frameW * SHEET.scale);
-    const y = -(r * SHEET.frameH * SHEET.scale);
+  function setFacing(direction) {
+    spriteViewport.style.transform = (direction === "right") ? "scaleX(-1)" : "scaleX(1)";
+  }
 
+  function applyMoveX(xPx) {
+    spriteMover.style.transform = `translateX(${xPx}px)`;
+  }
+
+  function renderFrame(frameIndex) {
+    const rc = SHEET.frameToRC(frameIndex);
+    const x = -(rc.c * SHEET.frameW * SHEET.scale);
+    const y = -(rc.r * SHEET.frameH * SHEET.scale);
     spriteSheetLayer.style.backgroundPosition = `${x}px ${y}px`;
-    spriteViewport.style.transform = `translateX(-50%) scaleX(${flipX ? -1 : 1})`;
+  }
+
+  // ===== FX helpers =====
+  function clearSceneFxClasses() {
+    if (!scene) return;
+    scene.classList.remove("fx-superbest", "fx-best", "fx-good", "fx-bad");
+  }
+
+  function removeParticles() {
+    if (!scene) return;
+    qsa(".tsp-particle").forEach(p => p.remove());
   }
 
   function clearFxAll() {
     spriteFxLayer.innerHTML = "";
-    const scene = document.querySelector(".scene");
-    if (scene) scene.classList.remove("superbest-burst");
-    document.querySelectorAll(".superbest-particle").forEach((n) => n.remove());
+    clearSceneFxClasses();
+    removeParticles();
   }
 
+  // note-only (legacy)
   function setNoteFx() {
     spriteFxLayer.innerHTML = "";
     const n = document.createElement("div");
@@ -348,33 +479,141 @@
     spriteFxLayer.appendChild(n);
   }
 
-  function setSuperBestFx(dtSec) {
-    const scene = document.querySelector(".scene");
+  function rand(min, max) {
+    return min + Math.random() * (max - min);
+  }
+
+  function spawnParticle({ text, xPct, yPct, cls, dur, dx, dy, rot, scale, sizePx }) {
     if (!scene) return;
 
-    scene.classList.add("superbest-burst");
+    const p = document.createElement("div");
+    p.className = `tsp-particle ${cls}`;
+    p.textContent = text;
+    p.style.left = `${xPct}%`;
+    p.style.top = `${yPct}%`;
+    p.style.setProperty("--tspDur", `${dur}s`);
+    p.style.setProperty("--tspDX", `${dx}px`);
+    p.style.setProperty("--tspDY", `${dy}px`);
+    p.style.setProperty("--tspR", `${rot}deg`);
+    p.style.setProperty("--tspS", `${scale}`);
+    p.style.fontSize = `${sizePx}px`;
 
-    superBestEmitter.accum += dtSec;
-    const interval = 0.12;
+    scene.appendChild(p);
 
-    while (superBestEmitter.accum >= interval) {
-      superBestEmitter.accum -= interval;
+    // remove after animation
+    const rmMs = Math.max(900, dur * 1000 + 200);
+    setTimeout(() => { try { p.remove(); } catch {} }, rmMs);
+  }
 
-      for (let k = 0; k < 2; k++) {
-        const p = document.createElement("div");
-        p.className = "superbest-particle";
-        p.textContent = Math.random() > 0.5 ? "✨" : "♪";
-        p.style.left = `${Math.floor(Math.random() * 96)}%`;
-        p.style.top = `${Math.floor(Math.random() * 96)}%`;
-        scene.appendChild(p);
-        setTimeout(() => { try { p.remove(); } catch {} }, 1600);
+  // 超ベスト：飛び交う（♪✨混在）
+  function emitSuperbest(dtSec) {
+    if (!scene) return;
+    scene.classList.add("fx-superbest");
+
+    FX.superAcc += dtSec;
+    const interval = 0.06; // 高頻度
+    while (FX.superAcc >= interval) {
+      FX.superAcc -= interval;
+
+      // 1tickで複数発生
+      const count = 6;
+      for (let i = 0; i < count; i++) {
+        const isSpark = Math.random() > 0.52;
+        const text = isSpark ? "✨" : "♪";
+
+        const xPct = rand(2, 98);
+        const yPct = rand(2, 98);
+
+        // 飛ぶ方向もバラけさせる
+        const dx = rand(-140, 140);
+        const dy = rand(-220, 80); // 上に舞う寄り
+        const rot = rand(-30, 30);
+        const dur = rand(1.0, 1.9);
+        const scale = rand(0.9, 1.35);
+        const sizePx = isSpark ? rand(16, 24) : rand(14, 22);
+
+        spawnParticle({
+          text, xPct, yPct,
+          cls: "tsp-fly",
+          dur, dx, dy, rot, scale, sizePx
+        });
       }
     }
   }
 
+  // ベスト：♪が降り注ぐ（上から落下、✨は少なめ）
+  function emitBest(dtSec) {
+    if (!scene) return;
+    scene.classList.add("fx-best");
+
+    FX.bestAcc += dtSec;
+    const interval = 0.12; // 中頻度
+    while (FX.bestAcc >= interval) {
+      FX.bestAcc -= interval;
+
+      const count = 4;
+      for (let i = 0; i < count; i++) {
+        const isSpark = Math.random() > 0.86; // ✨少
+        const text = isSpark ? "✨" : "♪";
+
+        const xPct = rand(4, 96);
+        const yPct = rand(-8, 6); // 上から
+        const dx = rand(-22, 22);
+        const dy = rand(220, 340);
+        const rot = rand(-12, 12);
+        const dur = rand(1.4, 2.2);
+        const scale = rand(0.9, 1.2);
+        const sizePx = isSpark ? rand(16, 22) : rand(14, 20);
+
+        spawnParticle({
+          text, xPct, yPct,
+          cls: "tsp-fall",
+          dur, dx, dy, rot, scale, sizePx
+        });
+      }
+    }
+  }
+
+  // 良好：♪がパラパラ（少量・遅め）
+  function emitGood(dtSec) {
+    if (!scene) return;
+    scene.classList.add("fx-good");
+
+    FX.goodAcc += dtSec;
+    const interval = 0.45; // 低頻度
+    while (FX.goodAcc >= interval) {
+      FX.goodAcc -= interval;
+
+      const count = 1 + (Math.random() > 0.7 ? 1 : 0);
+      for (let i = 0; i < count; i++) {
+        const text = "♪";
+        const xPct = rand(8, 92);
+        const yPct = rand(-6, 10);
+        const dur = rand(1.8, 2.6);
+        const dx = rand(-14, 14);
+        const dy = rand(160, 240);
+        const rot = rand(-14, 14);
+        const scale = rand(0.9, 1.15);
+        const sizePx = rand(13, 18);
+
+        spawnParticle({
+          text, xPct, yPct,
+          cls: "tsp-drift",
+          dur, dx, dy, rot, scale, sizePx
+        });
+      }
+    }
+  }
+
+  // 最悪：暗い雰囲気（CSSに任せる）
+  function applyBadFx() {
+    if (!scene) return;
+    scene.classList.add("fx-bad");
+  }
+
   function centerSprite() {
-    spriteViewport.style.left = "50%";
     WALK.x = 0;
+    applyMoveX(0);
   }
 
   function tickIdle(dtSec) {
@@ -388,9 +627,9 @@
   function tickWalk(dtSec) {
     if (WALK.turnTimer > 0) {
       WALK.turnTimer -= dtSec;
-      const flipTurn = (WALK.facing === "right");
-      renderFrame(3, flipTurn);
-      spriteViewport.style.left = `calc(50% + ${WALK.x}px)`;
+      setFacing(WALK.facing);
+      renderFrame(3);
+      applyMoveX(WALK.x);
       return;
     }
 
@@ -415,53 +654,78 @@
       WALK.stepFrame = (WALK.stepFrame === 1) ? 2 : 1;
     }
 
-    const flip = (WALK.facing === "right");
-    renderFrame(WALK.stepFrame, flip);
-    spriteViewport.style.left = `calc(50% + ${WALK.x}px)`;
+    setFacing(WALK.facing);
+    renderFrame(WALK.stepFrame);
+    applyMoveX(WALK.x);
+  }
+
+  function updateHomeNeutralButtonVisibility(rankInfo) {
+    if (!homeNeutralBtn) return;
+    const R = window.TSP_GAME.Rank;
+    const showIt = (rankInfo && rankInfo.rank !== R.neutral);
+    homeNeutralBtn.style.display = showIt ? "block" : "none";
   }
 
   function renderByCurrentEnv(dtSec) {
     if (!soul) return;
 
     const now = new Date();
-    const info = window.TSP_GAME.computeRank(MONSTER, envApplied, now);
+    const info = window.TSP_GAME.computeRank(MONSTER, envApplied, now, soul.attribute);
     const R = window.TSP_GAME.Rank;
 
-    const attrJp = window.TSP_GAME.ATTR_META[info.envAttr]?.jp || "無属性";
-    const rankJp = rankLabelNew(info.rank);
-
-    if (info.rank === R.neutral) envAttributeLabel.textContent = "無属性";
-    else envAttributeLabel.textContent = `${attrJp}（${rankJp}）`;
+    if (info.rank === R.neutral) {
+      envAttributeLabel.textContent = "無属性";
+    } else {
+      const a = attrJp(info.envAttr);
+      envAttributeLabel.textContent = `${a}（${rankLabel(info.rank)}）`;
+    }
 
     setHomeBackgroundByEnvAttr(info.envAttr);
+
+    // ★毎フレームのクリアは重いが、現状の設計に合わせて維持
+    // 粒は短命＋数も制御しているので体感は軽いはず（重い場合はrank変更時だけに最適化可能）
     clearFxAll();
 
+    updateHomeNeutralButtonVisibility(info);
+
+    // ランク別 表情・演出
     switch (info.rank) {
       case R.superbest:
-        renderFrame(7, false);
-        setSuperBestFx(dtSec);
+        setFacing("left");
+        renderFrame(7); // 喜び
+        emitSuperbest(dtSec);
         centerSprite();
         break;
+
       case R.best:
-        renderFrame(7, false);
-        setNoteFx();
+        setFacing("left");
+        renderFrame(7); // 喜び
+        emitBest(dtSec);
         centerSprite();
         break;
+
       case R.good:
         tickIdle(dtSec);
-        renderFrame(IDLE.frame, false);
-        setNoteFx();
+        setFacing("left");
+        renderFrame(IDLE.frame); // 通常1/2
+        emitGood(dtSec);
         centerSprite();
         break;
+
       case R.normal:
         tickIdle(dtSec);
-        renderFrame(IDLE.frame, false);
+        setFacing("left");
+        renderFrame(IDLE.frame); // 通常1/2
         centerSprite();
         break;
+
       case R.bad:
-        renderFrame(8, false);
+        setFacing("left");
+        renderFrame(8); // ダウン
+        applyBadFx();
         centerSprite();
         break;
+
       case R.neutral:
       default:
         tickWalk(dtSec);
@@ -494,57 +758,137 @@
 
     if (info.elemKey) {
       const jp = { fire: "マホウ", wind: "カウンター", earth: "ダゲキ", water: "カイフク" }[info.elemKey];
-      const remain = window.TSP_GAME.LIMITS.elemGrowMax - soul.growStats[info.elemKey];
-      if (info.elemGrow > 0) parts.push(`${jp}+${info.elemGrow}`);
-      else if (remain <= 0) parts.push(`${jp}+0`);
+      parts.push(`${jp}+${info.elemGrow}`);
     }
+
     growthPreview.textContent = parts.join(" / ");
   }
 
   // ===== Comeback modal =====
-  function openSoulModal(code) {
-    modalSoulText.value = code;
-    soulModal.classList.remove("hidden");
-    soulModal.setAttribute("aria-hidden", "false");
+  let comebackModalBound = false;
+
+  function ensureComebackModal() {
+    if (comebackModal) return comebackModal;
+
+    const modal = document.createElement("div");
+    modal.className = "modal-backdrop";
+    modal.innerHTML = `
+      <div class="modal">
+        <div class="modal-title">ソウルドールの記憶</div>
+        <textarea id="cbCodeArea" class="modal-code" readonly></textarea>
+        <div class="modal-actions">
+          <button id="cbCopyBtn">ソウルドールの記憶の保存(コピー)</button>
+          <button id="cbRebornBtn">カムバックする</button>
+          <button id="cbCloseBtn">育成に戻る</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) closeComebackModal();
+    });
+
+    comebackModal = modal;
+    return modal;
   }
 
-  function closeSoulModal() {
-    soulModal.classList.add("hidden");
-    soulModal.setAttribute("aria-hidden", "true");
+  function openComebackModal(code) {
+    const m = ensureComebackModal();
+    const area = $("cbCodeArea");
+    area.value = code;
+
+    if (!comebackModalBound) {
+      comebackModalBound = true;
+
+      $("cbCopyBtn").onclick = async () => {
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(area.value);
+            toast("記憶をコピーしました");
+          } else {
+            area.focus();
+            area.select();
+            openNotice("コピー", "自動コピー非対応です。\n選択された状態なので手動でコピーしてください。");
+          }
+        } catch (e) {
+          showError("copy", e);
+        }
+      };
+
+      $("cbRebornBtn").onclick = () => {
+        try {
+          closeComebackModal();
+          soul = null;
+          setHeader();
+          show(startView);
+        } catch (e) {
+          showError("cbRebornBtn", e);
+        }
+      };
+
+      $("cbCloseBtn").onclick = () => closeComebackModal();
+    }
+
+    m.classList.add("active");
+  }
+
+  function closeComebackModal() {
+    if (!comebackModal) return;
+    comebackModal.classList.remove("active");
   }
 
   function doComeback() {
-    cp("comeback: makeSoulCode");
+    if (!soul) return;
     const code = window.TSP_STATE.makeSoulCode(soul);
-    openSoulModal(code);
-    cp("comeback: opened");
+    openComebackModal(code);
   }
 
-  async function copySoulCode() {
-    const text = modalSoulText.value || "";
-    if (!text) return;
-    try {
-      await navigator.clipboard.writeText(text);
-      alert("記憶をコピーしました");
-    } catch {
-      modalSoulText.focus();
-      modalSoulText.select();
-      alert("この画面でコピーしてください（クリップボードに保存できませんでした）");
-    }
+  // ===== Confirm modal (ムゾクセイ？ only) =====
+  function ensureConfirmModal() {
+    if (confirmModal) return confirmModal;
+
+    const modal = document.createElement("div");
+    modal.className = "modal-backdrop";
+    modal.innerHTML = `
+      <div class="modal">
+        <div class="modal-title">ムゾクセイ？</div>
+        <div class="modal-actions" style="margin-top:12px;">
+          <button id="cfYesBtn">はい</button>
+          <button id="cfNoBtn" class="ghost">いいえ</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) closeConfirmModal();
+    });
+
+    confirmModal = modal;
+    return modal;
   }
 
-  function eject() {
-    closeSoulModal();
-    soul = null;
-    setHeader();
-    show(startView);
+  function openConfirmModal(onYes) {
+    const m = ensureConfirmModal();
+
+    $("cfYesBtn").onclick = () => {
+      try {
+        closeConfirmModal();
+        onYes && onYes();
+      } catch (e) { showError("confirmYes", e); }
+    };
+    $("cfNoBtn").onclick = () => closeConfirmModal();
+
+    m.classList.add("active");
   }
 
-  function cancelComeback() {
-    closeSoulModal();
+  function closeConfirmModal() {
+    if (!confirmModal) return;
+    confirmModal.classList.remove("active");
   }
 
-  // ===== Tick loop =====
+  // ===== Loop =====
   function rafLoop(msNow) {
     if (lastRafMs == null) lastRafMs = msNow;
     const dtSec = Math.min(0.05, (msNow - lastRafMs) / 1000);
@@ -554,13 +898,14 @@
 
     if (soul && tab === "home") {
       secondsAccum += dtSec;
+
       if (secondsAccum >= 60) {
         secondsAccum -= 60;
         try {
           window.TSP_GAME.applyOneMinute(soul, MONSTER, envApplied, new Date(), elemCounter);
           refreshStatsUI();
         } catch (e) {
-          fail("applyOneMinute", e);
+          showError("applyOneMinute", e);
         }
       }
 
@@ -568,55 +913,68 @@
         updateGrowthPreviewAndTimer();
         renderByCurrentEnv(dtSec);
       } catch (e) {
-        fail("homeTickRender", e);
+        showError("homeTickRender", e);
       }
     }
 
     requestAnimationFrame(rafLoop);
   }
 
-  // ===== Reborn pipelines =====
-  function pipelineAfterReborn(where) {
-    // where: "new" or "memory"
-    cp(`${where}: CP1 envSetting read`);
+  // ===== Neutral resets =====
+  function resetToNeutralEnvApplied() {
+    envApplied = { temp: 0, hum: 50, light: 50 };
+    secondsAccum = 0;
+    updateGrowthPreviewAndTimer();
+    renderByCurrentEnv(0);
+  }
 
-    // envSetting は保存しない仕様なので、常に無属性へ戻す（＝再リボーン時は無属性固定）
+  function resetToNeutralEnvDraft() {
+    envDraft = { temp: 0, hum: 50, light: 50 };
+    setSlidersFromDraft();
+    setLightDraft(50);
+    refreshEnvUI();
+  }
+
+  // ===== Reborn pipeline =====
+  function pipelineAfterReborn() {
     envDraft = { temp: 0, hum: 50, light: 50 };
     envApplied = { ...envDraft };
+    secondsAccum = 0;
 
-    cp(`${where}: CP2 init sliders`);
-    initSliders();
     setSlidersFromDraft();
+    setLightDraft(50);
     refreshEnvUI();
 
-    cp(`${where}: CP3 show main`);
-    show(mainView);
-    switchTab("home");
-
-    cp(`${where}: CP4 sprite set`);
     setSpriteSheet();
+    lastRafMs = null;
 
-    cp(`${where}: CP5 header/stats/crystal`);
+    WALK.x = 0; WALK.facing = "right"; WALK.stepTimer = 0; WALK.stepFrame = 1; WALK.turnTimer = 0;
+    IDLE.timer = 0; IDLE.frame = 1;
+
+    // FX accum reset
+    FX.superAcc = 0;
+    FX.bestAcc = 0;
+    FX.goodAcc = 0;
+
     setHeader();
     refreshStatsUI();
     refreshCrystalsUI();
 
-    cp(`${where}: CP6 timers/render`);
-    secondsAccum = 0;
-    lastRafMs = null;
-    WALK.x = 0; WALK.facing = "right"; WALK.stepTimer = 0; WALK.stepFrame = 1; WALK.turnTimer = 0;
-    IDLE.timer = 0; IDLE.frame = 1;
+    renderSkillsUI();
+    bindSkillsClickOnce();
+
+    show(mainView);
+    switchTab("home");
 
     updateGrowthPreviewAndTimer();
     renderByCurrentEnv(0);
-
-    cp(`${where}: DONE`);
   }
 
   // ===== Bind events =====
   function bindEvents() {
     tabBtns.forEach((btn) => {
       btn.addEventListener("click", () => {
+        if (uiLocked) return;
         try {
           switchTab(btn.dataset.tab);
           if (btn.dataset.tab === "home") {
@@ -624,91 +982,219 @@
             renderByCurrentEnv(0);
           }
         } catch (e) {
-          fail("tabSwitch", e);
+          showError("tabSwitch", e);
         }
       });
     });
 
     newSoulBtn.addEventListener("click", () => {
       try {
-        cp("new: click");
-        const saga = String(sagaInput.value || "").trim();
-        if (!saga) return alert("サーガ名を入力してください");
-
-        cp("new: call newSoulWindragon");
+        const saga = safeText(sagaInput.value);
+        if (!saga) return openNotice("入力", "サーガ名を入力してください");
         soul = window.TSP_STATE.newSoulWindragon(saga);
-
-        cp("new: pipeline");
-        pipelineAfterReborn("new");
+        pipelineAfterReborn();
       } catch (e) {
-        fail("newReborn", e);
+        showError("newReborn", e);
       }
     });
 
     textRebornBtn.addEventListener("click", () => {
       try {
-        cp("mem: click");
-        const saga = String(sagaInput.value || "").trim();
-        if (!saga) return alert("サーガ名を入力してください");
+        const saga = safeText(sagaInput.value);
+        if (!saga) return openNotice("入力", "サーガ名を入力してください");
 
-        const code = String(soulTextInput.value || "").trim();
-        if (!code) return alert("記憶が空です");
+        const code = safeText(soulTextInput.value);
+        if (!code) return openNotice("記憶", "記憶が空です");
 
-        cp("mem: parseSoulCode");
         const parsed = window.TSP_STATE.parseSoulCode(code);
-
-        cp("mem: assertSagaMatch");
         window.TSP_STATE.assertSagaMatch(parsed, saga);
 
         soul = parsed;
-
-        cp("mem: pipeline");
-        pipelineAfterReborn("mem");
+        pipelineAfterReborn();
       } catch (e) {
-        fail("memoryReborn", e);
+        showError("memoryReborn", e);
       }
     });
 
     comebackBtn.addEventListener("click", () => {
-      try {
-        if (!soul) return;
-        doComeback();
-      } catch (e) {
-        fail("comeback", e);
-      }
+      try { doComeback(); }
+      catch (e) { showError("comeback", e); }
     });
+
+    if (homeNeutralBtn) {
+      homeNeutralBtn.addEventListener("click", () => {
+        try {
+          if (!soul) return;
+          openConfirmModal(() => {
+            resetToNeutralEnvApplied();
+            resetToNeutralEnvDraft();
+            toast("無属性環境に戻しました");
+          });
+        } catch (e) {
+          showError("homeNeutralBtn", e);
+        }
+      });
+    }
 
     nicknameApplyBtn.addEventListener("click", () => {
       try {
         if (!soul) return;
-        soul.nickname = String(nicknameInput.value || "").trim();
+        soul.nickname = safeText(nicknameInput.value);
         setHeader();
+        toast("ニックネームを更新しました");
       } catch (e) {
-        fail("nicknameApply", e);
+        showError("nicknameApply", e);
       }
     });
 
-    tempSlider.addEventListener("input", () => {
-      try { readDraftFromSliders(); refreshEnvUI(); }
-      catch (e) { fail("tempInput", e); }
-    });
-    humiditySlider.addEventListener("input", () => {
-      try { readDraftFromSliders(); refreshEnvUI(); }
-      catch (e) { fail("humInput", e); }
-    });
-    lightSlider.addEventListener("input", () => {
-      try { readDraftFromSliders(); refreshEnvUI(); }
-      catch (e) { fail("lightInput", e); }
-    });
+    const onEnvInput = () => {
+      try {
+        readDraftFromSlidersOnly();
+        refreshEnvUI();
+      } catch (e) {
+        showError("envInput", e);
+      }
+    };
+    tempSlider.addEventListener("input", onEnvInput);
+    humiditySlider.addEventListener("input", onEnvInput);
 
     neutralBtn.addEventListener("click", () => {
       try {
-        envDraft = { temp: 0, hum: 50, light: 50 };
-        setSlidersFromDraft();
-        refreshEnvUI();
-      } catch (e) {
-        fail("neutralBtn", e);
-      }
+        resetToNeutralEnvDraft();
+        toast("ドラフトを無属性に戻しました");
+      } catch (e) { showError("neutralBtn", e); }
     });
 
-    applyEnvBtn.addEventList
+    const bindLightBtn = (btn, val) => {
+      btn.addEventListener("click", () => {
+        try {
+          setLightDraft(val);
+          refreshEnvUI();
+        } catch (e) {
+          showError("lightBtn", e);
+        }
+      });
+    };
+    bindLightBtn(lightBtn0, 0);
+    bindLightBtn(lightBtn50, 50);
+    bindLightBtn(lightBtn100, 100);
+
+    applyEnvBtn.addEventListener("click", async () => {
+      try {
+        await playAdventureAndApply();
+      } catch (e) {
+        lockUI(false);
+        showError("applyEnvBtn", e);
+      }
+    });
+  }
+
+  // ===== Boot =====
+  let booted = false;
+
+  function boot() {
+    if (booted) return;
+    booted = true;
+
+    try {
+      if (!window.TSP_STATE) throw new Error("TSP_STATEがありません（state.js未読込）");
+      if (!window.TSP_GAME) throw new Error("TSP_GAMEがありません（game.js未読込）");
+
+      startView = must("startView");
+      mainView = must("mainView");
+
+      headerLine1 = must("headerLine1");
+      headerLine2 = must("headerLine2");
+      headerLine3 = must("headerLine3");
+
+      sagaInput = must("sagaInput");
+      soulTextInput = must("soulTextInput");
+      newSoulBtn = must("newSoulBtn");
+      textRebornBtn = must("textRebornBtn");
+
+      tabBtns = qsa(".tab-btn");
+      tabEls = {
+        home: must("tab-home"),
+        environment: must("tab-environment"),
+        legendz: must("tab-legendz"),
+        crystal: must("tab-crystal"),
+      };
+
+      envAttributeLabel = must("envAttributeLabel");
+      growthTimer = must("growthTimer");
+      growthPreview = must("growthPreview");
+      comebackBtn = must("comebackBtn");
+      homeNeutralBtn = $("homeNeutralBtn");
+
+      spriteMover = must("spriteMover");
+      spriteViewport = must("spriteViewport");
+      spriteSheetLayer = must("spriteSheetLayer");
+      spriteFxLayer = must("spriteFxLayer");
+      scene = document.querySelector(".scene");
+
+      tempSlider = must("tempSlider");
+      humiditySlider = must("humiditySlider");
+      tempValue = must("tempValue");
+      humidityValue = must("humidityValue");
+      lightValue = must("lightValue");
+      lightLabel = must("lightLabel");
+
+      envPreviewLabel = must("envPreviewLabel");
+      neutralBtn = must("neutralBtn");
+      applyEnvBtn = must("applyEnvBtn");
+
+      lightBtn0 = must("lightBtn0");
+      lightBtn50 = must("lightBtn50");
+      lightBtn100 = must("lightBtn100");
+
+      speciesName = must("speciesName");
+      nicknameInput = must("nicknameInput");
+      nicknameApplyBtn = must("nicknameApplyBtn");
+      legendzAttribute = must("legendzAttribute");
+      hpStat = must("hpStat");
+      magicStat = must("magicStat");
+      counterStat = must("counterStat");
+      strikeStat = must("strikeStat");
+      healStat = must("healStat");
+
+      skillSlots = $("skillSlots");
+      crystalList = must("crystalList");
+
+      show(startView);
+      setHeader();
+
+      initSliders();
+
+      envDraft = { temp: 0, hum: 50, light: 50 };
+      envApplied = { ...envDraft };
+      setSlidersFromDraft();
+      setLightDraft(50);
+      refreshEnvUI();
+
+      spriteViewport.style.width = (SHEET.frameW * SHEET.scale) + "px";
+      spriteViewport.style.height = (SHEET.frameH * SHEET.scale) + "px";
+      spriteSheetLayer.style.width = (96 * SHEET.scale) + "px";
+      spriteSheetLayer.style.height = (64 * SHEET.scale) + "px";
+      spriteSheetLayer.style.backgroundRepeat = "no-repeat";
+      spriteSheetLayer.style.backgroundSize = `${96 * SHEET.scale}px ${64 * SHEET.scale}px`;
+
+      setSpriteSheet();
+      setFacing("left");
+      renderFrame(1);
+      applyMoveX(0);
+
+      renderSkillsUI();
+      bindSkillsClickOnce();
+
+      bindEvents();
+      requestAnimationFrame(rafLoop);
+
+    } catch (e) {
+      booted = false;
+      showError("boot", e);
+    }
+  }
+
+  window.addEventListener("load", boot, { once: true });
+
+})();
