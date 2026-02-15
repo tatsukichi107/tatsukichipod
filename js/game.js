@@ -2,6 +2,7 @@
    TalisPod v0.77+
    game.js（module不使用）
    環境判定・相性判定の中核ロジック（最新版ルール）
+   ＋ app.js互換用の配列（*.length参照）を再公開
 
    依存：
    - window.TSP_AREAMAP（areaMap.js）
@@ -9,17 +10,20 @@
 
    公開：
    window.TSP_GAME = {
-     ATTR,                         // 内部属性 enum
-     rankEnv(mon, env, now),       // 環境ランク判定（エリア名も返す）
-     previewAttribute(env, now),   // 予想環境（属性のみ：無属性/水中含む）
-     lightTarget(now),             // 陸上の適正光（0/50/100）
-     isLightOk(now, light),        // 陸上の光足切り判定
-     relation(monAttr, envAttr),   // GOOD/NORMAL/WORST
+     // 互換性（UIが参照しがちな配列）
+     TEMP_STEPS, HUM_STEPS, LIGHT_OPTIONS,
+     // ロジック
+     ATTR, ATTR_LABEL, RANK, RANK_LABEL,
+     rankEnv(mon, env, now),
+     previewAttribute(env, now),
+     lightTarget(now),
+     isLightOk(now, light),
+     relation(monAttr, envAttr)
    }
 
    新ルール（優先順位）：
-   0) 無属性（temp==0 && hum==50）→ NEUTRAL（相性判定外）
-   1) 水中（hum==100）→ envAttr=STORM、水深で海域確定（光足切り無視）
+   0) 無属性（temp==0 && hum==50）→ NEUTRAL
+   1) 水中（hum==100）→ envAttr=STORM（水深で海域確定・光足切り無視）
    2) 陸上：光が適正でない → 強制 WORST
    3) 超ベスト：ピンポイント座標一致 → SUPER_BEST
    4) ベスト：超ベストと同じエリア → BEST
@@ -27,9 +31,6 @@
       - 同属性 → GOOD
       - 真逆（風↔土、火↔水）→ WORST
       - 隣（それ以外）→ NORMAL
-
-   重要：
-   - 属性の内部値は VOLCANO/TORNADO/EARTHQUAKE/STORM に統一
    ========================================================= */
 (function () {
   "use strict";
@@ -44,6 +45,34 @@
     console.error("[game] TSP_AREA missing");
   }
 
+  // ---------------------------------------------------------
+  // 互換性：UI（app.js）が参照しがちなステップ配列
+  // ※ここが undefined だと `undefined.length` でboot落ちしがち
+  // ---------------------------------------------------------
+  const TEMP_STEPS = Object.freeze([
+    -273,
+    -45, -40, -35, -30, -25, -20, -15, -10, -5,
+    0,
+    5, 10, 15, 20, 25, 30, 35, 40, 45,
+    999
+  ]);
+
+  const HUM_STEPS = Object.freeze([
+    0,
+    5, 10, 15, 20, 25, 30, 35, 40, 45,
+    50,
+    55, 60, 65, 70, 75,
+    80, 85,
+    90, 95,
+    99,
+    100
+  ]);
+
+  const LIGHT_OPTIONS = Object.freeze([0, 50, 100]);
+
+  // ---------------------------------------------------------
+  // 内部属性・表示名
+  // ---------------------------------------------------------
   const ATTR = Object.freeze({
     VOLCANO: "VOLCANO",
     TORNADO: "TORNADO",
@@ -59,7 +88,7 @@
     NEUTRAL: "無属性"
   });
 
-  // ランク（表示名はapp.js側でもよいが、返却に含める）
+  // ランク（キー）
   const RANK = Object.freeze({
     NEUTRAL: "NEUTRAL",
     SUPER_BEST: "SUPER_BEST",
@@ -93,7 +122,7 @@
     }
   }
 
-  // 隣属性（「真逆」と「同属性」以外）
+  // 隣属性（同・真逆以外）
   function isAdjacent(monAttr, envAttr) {
     const m = safeAttr(monAttr);
     const e = safeAttr(envAttr);
@@ -110,7 +139,6 @@
   function lightTarget(now) {
     const d = now instanceof Date ? now : new Date();
     const h = d.getHours();
-    const m = d.getMinutes();
     // 6:00-9:59
     if (h >= 6 && h <= 9) return 50;
     // 10:00-15:59
@@ -132,17 +160,17 @@
     const e = normalizeEnv(env);
     if (!e) return { key: "NEUTRAL", label: ATTR_LABEL.NEUTRAL };
 
-    if (AR.isNeutral(e.temp, e.hum)) {
+    if (AR && AR.isNeutral && AR.isNeutral(e.temp, e.hum)) {
       return { key: "NEUTRAL", label: ATTR_LABEL.NEUTRAL };
     }
     if (Number(e.hum) === 100) {
       return { key: ATTR.STORM, label: ATTR_LABEL.STORM };
     }
 
-    const areaId = AR.resolveAreaId(e.temp, e.hum, e.light);
+    const areaId = AR ? AR.resolveAreaId(e.temp, e.hum, e.light) : "NEUTRAL";
     if (areaId === "NEUTRAL") return { key: "NEUTRAL", label: ATTR_LABEL.NEUTRAL };
 
-    const area = AM.AREAS[areaId];
+    const area = AM && AM.AREAS ? AM.AREAS[areaId] : null;
     const a = area ? safeAttr(area.attribute) : null;
     return a ? { key: a, label: ATTR_LABEL[a] } : { key: "NEUTRAL", label: ATTR_LABEL.NEUTRAL };
   }
@@ -156,7 +184,7 @@
     return { temp, hum, light };
   }
 
-  // ピンポイント一致判定（超ベスト）
+  // 超ベスト：ピンポイント座標一致
   // superBest: { temp, hum, light }（水中では light=水深）
   function isSuperBest(mon, env) {
     if (!mon || !mon.superBest) return false;
@@ -170,17 +198,15 @@
     if (env.hum !== h) return false;
 
     // 水中は水深一致が必要（light扱い）
-    if (env.hum === 100) {
-      return env.light === l;
-    }
-    // 陸上は光は足切り判定で見ているので、ここでは温度湿度のみ一致でOK
-    // （あなたの「超ベストは温度湿度ピンポイント」方針を優先）
+    if (env.hum === 100) return env.light === l;
+
+    // 陸上は「温度・湿度ピンポイント」で超ベスト（光は足切り側で判定）
     return true;
   }
 
   // 超ベストが属するエリアID（ベスト判定に使う）
   function superBestAreaId(mon) {
-    if (!mon || !mon.superBest) return "NEUTRAL";
+    if (!mon || !mon.superBest || !AR) return "NEUTRAL";
     const sb = mon.superBest;
     const t = Number(sb.temp);
     const h = Number(sb.hum);
@@ -206,26 +232,27 @@
     const e = normalizeEnv(env);
     const monAttr = safeAttr(mon && mon.attribute);
 
-    // フォールバック
     const out = {
       rankKey: RANK.NORMAL,
       rankLabel: RANK_LABEL[RANK.NORMAL],
-      // 表示用（ホームはエリア名、環境タブは属性のみ運用）
+
       areaId: "NEUTRAL",
       areaName: "無属性",
+
       envAttr: null,
       envAttrLabel: ATTR_LABEL.NEUTRAL,
-      // 光情報（陸上のみ意味あり）
+
       lightTarget: lightTarget(tNow),
       lightOk: true,
+
       isSea: false,
       isNeutral: false
     };
 
-    if (!e) return out;
+    if (!e || !AR || !AM) return out;
 
     // 0) 無属性
-    if (AR.isNeutral(e.temp, e.hum)) {
+    if (AR.isNeutral && AR.isNeutral(e.temp, e.hum)) {
       out.rankKey = RANK.NEUTRAL;
       out.rankLabel = RANK_LABEL[RANK.NEUTRAL];
       out.areaId = "NEUTRAL";
@@ -251,10 +278,10 @@
       out.envAttr = ATTR.STORM;
       out.envAttrLabel = ATTR_LABEL.STORM;
 
-      const area = AM.AREAS[areaId];
-      out.areaName = area ? area.name : "水中";
+      const area = AM.AREAS ? AM.AREAS[areaId] : null;
+      out.areaName = area && area.name ? area.name : "水中";
 
-      // 超ベスト（ピンポイント：温度/湿度/水深）
+      // 超ベスト
       if (isSuperBest(mon, e)) {
         out.rankKey = RANK.SUPER_BEST;
         out.rankLabel = RANK_LABEL[RANK.SUPER_BEST];
@@ -269,18 +296,17 @@
         return out;
       }
 
-      // 属性相性のみ（環境属性は水固定）
+      // 属性相性（環境属性は水固定）
       const rel = relation(monAttr, ATTR.STORM);
       out.rankKey = rel;
       out.rankLabel = RANK_LABEL[rel] || RANK_LABEL[RANK.NORMAL];
       return out;
     }
 
-    // 2) 陸上（湿度99も陸上）
+    // 2) 陸上
     out.isSea = false;
 
-    // エリア情報
-    const area = AM.AREAS[areaId];
+    const area = AM.AREAS ? AM.AREAS[areaId] : null;
     const envAttr = area ? safeAttr(area.attribute) : null;
 
     out.areaName = (area && area.name) ? area.name : "無属性";
@@ -296,7 +322,7 @@
       return out;
     }
 
-    // 3) 超ベスト（ピンポイント座標：温度/湿度一致）
+    // 3) 超ベスト
     if (isSuperBest(mon, e)) {
       out.rankKey = RANK.SUPER_BEST;
       out.rankLabel = RANK_LABEL[RANK.SUPER_BEST];
@@ -319,10 +345,18 @@
   }
 
   window.TSP_GAME = Object.freeze({
+    // 互換性
+    TEMP_STEPS,
+    HUM_STEPS,
+    LIGHT_OPTIONS,
+
+    // enum・表示
     ATTR,
     ATTR_LABEL,
     RANK,
     RANK_LABEL,
+
+    // 判定
     lightTarget,
     isLightOk,
     previewAttribute,
