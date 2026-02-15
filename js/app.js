@@ -1,1228 +1,928 @@
 /* =========================================================
- * js/app.js  v0.77-FX4
- * 目的：♪/✨パーティクルが「全然出ない」問題を修正
- *
- * 原因：
- * - renderByCurrentEnv() 内で clearFxAll() を毎フレーム呼び、
- *   生成したパーティクルを即削除してしまっていたため視認できない
- *
- * 修正：
- * - FXの全消去は「環境ランクが変化した時」だけ実施
- * - ランクが同じ間はパーティクルを消さず、自然消滅(setTimeout)に任せる
- * - sceneの fx-* クラスもランク変化時のみ付け替え
- *
- * 注意：
- * - 既存仕様（表情/歩行/育成/モーダル等）はノータッチ方針
- * - ただし clearFxAll() の呼び方のみ最小変更
- * ========================================================= */
+   TalisPod app.js（module不使用）
+   - boot時に TSP_GAME.TEMP_STEPS / HUM_STEPS が未定義でも落ちない
+   - game.js が後から生えた/上書きされたケースでも再初期化できる
+   - 画面上に簡易診断バー（紫）を1行表示（コンソール無し環境向け）
 
+   依存（ある前提）：
+   - window.TSP_AREAMAP（areaMap.js）
+   - window.TSP_AREA（areaResolver.js）
+   - window.TSP_GAME（game.js）
+   ただし、どれが欠けても「落ちずにbootエラー表示」を目指す
+
+   注意：
+   - HTMLのIDは既存UIに合わせて「よくある名前」で拾う
+     （存在しない場合でも落ちないようにガード）
+   ========================================================= */
 (function () {
   "use strict";
 
-  const $ = (id) => document.getElementById(id);
-  const qsa = (sel) => Array.from(document.querySelectorAll(sel));
+  // ----------------------------
+  // Utilities
+  // ----------------------------
+  const $id = (id) => document.getElementById(id);
+  const $q = (sel) => document.querySelector(sel);
+  const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
+  const isArr = (v) => Array.isArray(v);
+  const nowDate = () => new Date();
 
-  function must(id) {
-    const el = $(id);
-    if (!el) throw new Error(`DOM missing: #${id}`);
-    return el;
+  // ----------------------------
+  // On-screen diagnostic bar
+  // ----------------------------
+  function ensureDiagBar() {
+    let bar = $id("tspDiagBar");
+    if (!bar) {
+      bar = document.createElement("div");
+      bar.id = "tspDiagBar";
+      bar.style.position = "fixed";
+      bar.style.left = "0";
+      bar.style.right = "0";
+      bar.style.top = "0";
+      bar.style.zIndex = "99999";
+      bar.style.padding = "6px 10px";
+      bar.style.fontSize = "12px";
+      bar.style.lineHeight = "1.2";
+      bar.style.background = "rgba(128, 0, 255, 0.82)";
+      bar.style.color = "#fff";
+      bar.style.fontFamily = "system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+      bar.style.whiteSpace = "nowrap";
+      bar.style.overflow = "hidden";
+      bar.style.textOverflow = "ellipsis";
+      bar.style.pointerEvents = "none";
+      document.body.appendChild(bar);
+    }
+    return bar;
   }
 
-  function safeText(s) {
-    return String(s ?? "").replace(/\s+/g, " ").trim();
-  }
-
-  // ===== lightweight UI notice (no native dialogs) =====
-  let noticeModal = null;
-  let toastEl = null;
-  let toastTimer = null;
-
-  function ensureToast() {
-    if (toastEl) return toastEl;
-    const el = document.createElement("div");
-    el.id = "tspToast";
-    el.style.position = "fixed";
-    el.style.left = "50%";
-    el.style.bottom = "calc(84px + env(safe-area-inset-bottom, 0px))";
-    el.style.transform = "translateX(-50%)";
-    el.style.zIndex = "120";
-    el.style.maxWidth = "92vw";
-    el.style.padding = "10px 12px";
-    el.style.borderRadius = "14px";
-    el.style.border = "1px solid rgba(255,255,255,0.14)";
-    el.style.background = "rgba(15,18,28,0.92)";
-    el.style.backdropFilter = "blur(10px)";
-    el.style.color = "rgba(255,255,255,0.92)";
-    el.style.fontSize = "13px";
-    el.style.lineHeight = "1.45";
-    el.style.boxShadow = "0 14px 28px rgba(0,0,0,0.35)";
-    el.style.display = "none";
-    el.style.whiteSpace = "pre-wrap";
-    document.body.appendChild(el);
-    toastEl = el;
-    return el;
-  }
-
-  function toast(msg, ms = 1400) {
+  function setDiag(text) {
     try {
-      const el = ensureToast();
-      el.textContent = String(msg ?? "");
-      el.style.display = "block";
-      if (toastTimer) clearTimeout(toastTimer);
-      toastTimer = setTimeout(() => {
-        el.style.display = "none";
-      }, ms);
-    } catch {
-      console.error("toast failed", msg);
+      const bar = ensureDiagBar();
+      bar.textContent = text;
+    } catch (_) {
+      // ignore
     }
   }
 
-  function ensureNoticeModal() {
-    if (noticeModal) return noticeModal;
-
-    const modal = document.createElement("div");
-    modal.className = "modal-backdrop";
-    modal.innerHTML = `
-      <div class="modal">
-        <div id="nzTitle" class="modal-title">お知らせ</div>
-        <div id="nzBody" style="color:var(--muted); font-size:13px; line-height:1.55; white-space:pre-wrap;"></div>
-        <div class="modal-actions" style="margin-top:12px;">
-          <button id="nzOkBtn">OK</button>
-        </div>
-      </div>
-    `;
-    document.body.appendChild(modal);
-
-    modal.addEventListener("click", (e) => {
-      if (e.target === modal) closeNotice();
-    });
-
-    noticeModal = modal;
-    $("nzOkBtn").onclick = () => closeNotice();
-
-    return noticeModal;
-  }
-
-  function openNotice(title, body) {
-    const m = ensureNoticeModal();
-    $("nzTitle").textContent = String(title ?? "お知らせ");
-    $("nzBody").textContent = String(body ?? "");
-    m.classList.add("active");
-  }
-
-  function closeNotice() {
-    if (!noticeModal) return;
-    noticeModal.classList.remove("active");
-  }
-
-  function showError(where, e) {
-    const msg = (e && (e.message || String(e))) || "unknown";
-    console.error(where, e);
-    openNotice("エラー", `（${where}）\n${msg}`);
-  }
-
-  function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-  // ===== Monster / sprite config =====
-  const MONSTER = {
-    id: "windragon",
-    spritePath: "./assets/sprites/windragon.png",
-    superBest: { temp: -45, hum: 5, waterDepth: 50 },
-  };
-
-  const SHEET = {
-    frameW: 24,
-    frameH: 32,
-    scale: 3,
-    frameToRC(i) {
-      const idx = Math.max(1, Math.min(8, i)) - 1;
-      return { r: Math.floor(idx / 4), c: idx % 4 };
-    }
-  };
-
-  const WALK = {
-    halfRangePx: 84,
-    speedPxPerSec: 12,
-    facing: "right",
-    x: 0,
-    stepTimer: 0,
-    stepFrame: 1,
-    turnTimer: 0
-  };
-
-  const IDLE = { timer: 0, frame: 1 };
-
-  // ===== Particle emit accumulators =====
-  const FX = {
-    superAcc: 0,
-    bestAcc: 0,
-    goodAcc: 0,
-  };
-
-  // ===== DOM refs =====
-  let startView, mainView;
-  let headerLine1, headerLine2, headerLine3;
-
-  let sagaInput, soulTextInput, newSoulBtn, textRebornBtn;
-
-  let tabBtns;
-  let tabEls;
-
-  let envAttributeLabel, growthTimer, growthPreview, comebackBtn;
-  let homeNeutralBtn;
-
-  let spriteMover, spriteViewport, spriteSheetLayer, spriteFxLayer;
-  let scene;
-
-  let tempSlider, humiditySlider;
-  let tempValue, humidityValue, lightValue, lightLabel;
-  let envPreviewLabel, neutralBtn, applyEnvBtn;
-
-  let lightBtn0, lightBtn50, lightBtn100;
-
-  let speciesName, nicknameInput, nicknameApplyBtn, legendzAttribute;
-  let hpStat, magicStat, counterStat, strikeStat, healStat;
-
-  let skillSlots;
-  let crystalList;
-
-  // ===== Modals =====
-  let comebackModal = null;
-  let confirmModal = null;
-
-  // ===== State =====
-  let soul = null;
-  let envDraft = { temp: 0, hum: 50, light: 50 };
-  let envApplied = { temp: 0, hum: 50, light: 50 };
-  const elemCounter = { fire: 0, wind: 0, earth: 0, water: 0 };
-
-  let secondsAccum = 0;
-  let lastRafMs = null;
-  let uiLocked = false;
-
-  // ===== Skills event guard =====
-  let skillsClickBound = false;
-
-  // ★FX state tracking（ここが今回の肝）
-  let lastRankKey = null;   // e.g. "neutral" / "superbest" etc.
-  let lastEnvAttr = null;   // "volcano" etc.
-
-  function lockUI(on) {
-    uiLocked = on;
-    if (tabBtns) tabBtns.forEach(b => (b.disabled = on));
-    if (applyEnvBtn) applyEnvBtn.disabled = on;
-    if (neutralBtn) neutralBtn.disabled = on;
-    if (homeNeutralBtn) homeNeutralBtn.disabled = on;
-  }
-
-  function setUnrebornFlag(isUnreborn) {
-    document.body.classList.toggle("unreborn", !!isUnreborn);
-  }
-
-  // ===== View / Tab =====
-  function show(view) {
-    startView.classList.remove("active");
-    mainView.classList.remove("active");
-    view.classList.add("active");
-    setUnrebornFlag(view === startView);
-  }
-
-  function activeTabKey() {
-    const btn = tabBtns.find(b => b.classList.contains("active"));
-    return (btn && btn.dataset) ? (btn.dataset.tab || "home") : "home";
-  }
-
-  function switchTab(key) {
-    tabBtns.forEach(b => b.classList.toggle("active", b.dataset.tab === key));
-    Object.values(tabEls).forEach(el => el.classList.remove("active"));
-    tabEls[key].classList.add("active");
-  }
-
-  // ===== Header =====
-  function displayNickname(s) {
-    const n = safeText(s && s.nickname);
-    return n ? n : "未登録";
-  }
-
-  function setHeader() {
-    if (!soul) {
-      headerLine1.textContent = "";
-      headerLine2.textContent = "";
-      headerLine3.textContent = "未リボーン";
-      return;
-    }
-    const saga = safeText(soul.sagaName);
-    const sp = safeText(soul.speciesName);
-    const nick = displayNickname(soul);
-
-    headerLine1.textContent = `サーガ名：${saga}`;
-    headerLine2.textContent = `種族名：${sp} / ニックネーム：${nick}`;
-    headerLine3.textContent = "リボーン中";
-  }
-
-  function attrJp(attr) {
-    const meta = window.TSP_GAME && window.TSP_GAME.ATTR_META;
-    if (attr === "neutral") return "無属性";
-    return (meta && meta[attr] && meta[attr].jp) ? meta[attr].jp : String(attr || "");
-  }
-
-  function setHomeBackgroundByEnvAttr(envAttr) {
-    if (!scene) return;
-    scene.classList.remove("attr-none", "attr-volcano", "attr-tornado", "attr-earthquake", "attr-storm");
-    switch (envAttr) {
-      case "volcano": scene.classList.add("attr-volcano"); break;
-      case "tornado": scene.classList.add("attr-tornado"); break;
-      case "earthquake": scene.classList.add("attr-earthquake"); break;
-      case "storm": scene.classList.add("attr-storm"); break;
-      default: scene.classList.add("attr-none");
-    }
-  }
-
-  function rankLabel(rank) {
-    const R = window.TSP_GAME.Rank;
-    switch (rank) {
-      case R.superbest: return "超ベスト環境";
-      case R.best: return "ベスト環境";
-      case R.good: return "良好環境";
-      case R.normal: return "普通環境";
-      case R.bad: return "最悪環境";
-      default: return "無属性環境";
-    }
-  }
-
-  // ===== Stats UI =====
-  function refreshStatsUI() {
-    if (!soul) return;
-
-    speciesName.textContent = soul.speciesName;
-    nicknameInput.value = soul.nickname || "";
-    legendzAttribute.textContent = attrJp(soul.attribute);
-
-    const mx = window.TSP_GAME.maxHP(soul);
-    hpStat.textContent = `${soul.currentHP}/${mx}`;
-
-    magicStat.textContent = String(soul.baseStats.fire + soul.growStats.fire);
-    counterStat.textContent = String(soul.baseStats.wind + soul.growStats.wind);
-    strikeStat.textContent = String(soul.baseStats.earth + soul.growStats.earth);
-    healStat.textContent = String(soul.baseStats.water + soul.growStats.water);
-  }
-
-  function refreshCrystalsUI() {
-    if (!soul) return;
-    const c = soul.crystals || {};
-    crystalList.innerHTML = `
-      <div>ヴォルケーノ：${c.volcano || 0}</div>
-      <div>トルネード：${c.tornado || 0}</div>
-      <div>アースクエイク：${c.earthquake || 0}</div>
-      <div>ストーム：${c.storm || 0}</div>
-    `;
-  }
-
-  // ===== Skills (dummy) =====
-  const DUMMY_SKILLS = Array.from({ length: 15 }, (_, i) => ({
-    id: `skill_${i + 1}`,
-    name: `ワザ${String(i + 1).padStart(2, "0")}`,
-    meta: (i % 3 === 0) ? "攻撃" : (i % 3 === 1 ? "補助" : "回復"),
-  }));
-
-  function renderSkillsUI() {
-    if (!skillSlots) return;
-    skillSlots.innerHTML = "";
-    DUMMY_SKILLS.forEach((sk, idx) => {
-      const row = document.createElement("div");
-      row.className = "skill-slot";
-      row.innerHTML = `
-        <div class="left">
-          <div class="name">${sk.name}</div>
-          <div class="meta">${sk.meta} / Slot ${idx + 1}</div>
-        </div>
-        <button type="button" class="try-btn" data-skill="${sk.id}">試し撃ち</button>
-      `;
-      skillSlots.appendChild(row);
-    });
-  }
-
-  function bindSkillsClickOnce() {
-    if (!skillSlots || skillsClickBound) return;
-    skillsClickBound = true;
-
-    skillSlots.addEventListener("click", (e) => {
-      const btn = e.target && e.target.closest && e.target.closest(".try-btn");
-      if (!btn) return;
-
-      const id = btn.getAttribute("data-skill");
-      const sk = DUMMY_SKILLS.find(s => s.id === id);
-      if (!sk) return;
-
-      openNotice("試し撃ち", `${sk.name} を試し撃ち！`);
-    });
-  }
-
-  // ===== Env sliders =====
-  function initSliders() {
-    tempSlider.min = "0";
-    tempSlider.max = String(window.TSP_GAME.TEMP_STEPS.length - 1);
-    tempSlider.step = "1";
-
-    humiditySlider.min = "0";
-    humiditySlider.max = String(window.TSP_GAME.HUM_STEPS.length - 1);
-    humiditySlider.step = "1";
-  }
-
-  function setLightDraft(value) {
-    envDraft.light = value;
-    lightValue.textContent = String(value);
-
-    [lightBtn0, lightBtn50, lightBtn100].forEach(b => b.classList.remove("active"));
-    if (value === 0) lightBtn0.classList.add("active");
-    else if (value === 50) lightBtn50.classList.add("active");
-    else lightBtn100.classList.add("active");
-  }
-
-  function readDraftFromSlidersOnly() {
-    const t = window.TSP_GAME.TEMP_STEPS[Number(tempSlider.value)] ?? 0;
-    const h = window.TSP_GAME.HUM_STEPS[Number(humiditySlider.value)] ?? 50;
-    envDraft.temp = t;
-    envDraft.hum = h;
-  }
-
-  function setSlidersFromDraft() {
-    const tIdx = window.TSP_GAME.TEMP_STEPS.indexOf(Number(envDraft.temp));
-    const hIdx = window.TSP_GAME.HUM_STEPS.indexOf(Number(envDraft.hum));
-    tempSlider.value = String(Math.max(0, tIdx));
-    humiditySlider.value = String(Math.max(0, hIdx));
-  }
-
-  function updateLightLabelByHumidity() {
-    lightLabel.textContent = (Number(envDraft.hum) === 100) ? "水深" : "光量";
-  }
-
-  function refreshEnvUI() {
-    tempValue.textContent = `${envDraft.temp}℃`;
-    humidityValue.textContent = `${envDraft.hum}％`;
-    updateLightLabelByHumidity();
-
-    const attr = window.TSP_GAME.envAttribute(envDraft.temp, envDraft.hum);
-    envPreviewLabel.textContent = (attr === "neutral") ? "無属性" : attrJp(attr);
-  }
-
-  // ===== Adventure apply =====
-  async function playAdventureAndApply() {
-    if (uiLocked) return;
-
-    lockUI(true);
-
-    const tabEnv = tabEls.environment;
-    const overlay = document.createElement("div");
-    overlay.className = "adventure-overlay";
-    overlay.textContent = "冒険中…";
-    tabEnv.appendChild(overlay);
-
-    await sleep(3000);
-
-    overlay.remove();
-
-    envApplied = { ...envDraft };
-    secondsAccum = 0;
-
-    switchTab("home");
-    lockUI(false);
-
-    updateGrowthPreviewAndTimer();
-    renderByCurrentEnv(0);
-  }
-
-  // =========================================================
-  // Sprite / Rendering
-  // =========================================================
-  function setSpriteSheet() {
-    spriteSheetLayer.style.backgroundImage = `url("${MONSTER.spritePath}")`;
-    spriteSheetLayer.style.transform = "";
-    spriteMover.style.transform = "translateX(0px)";
-    spriteViewport.style.transform = "scaleX(1)";
-  }
-
-  function setFacing(direction) {
-    spriteViewport.style.transform = (direction === "right") ? "scaleX(-1)" : "scaleX(1)";
-  }
-
-  function applyMoveX(xPx) {
-    spriteMover.style.transform = `translateX(${xPx}px)`;
-  }
-
-  function renderFrame(frameIndex) {
-    const rc = SHEET.frameToRC(frameIndex);
-    const x = -(rc.c * SHEET.frameW * SHEET.scale);
-    const y = -(rc.r * SHEET.frameH * SHEET.scale);
-    spriteSheetLayer.style.backgroundPosition = `${x}px ${y}px`;
-  }
-
-  // ===== FX helpers =====
-  function clearSceneFxClasses() {
-    if (!scene) return;
-    scene.classList.remove("fx-superbest", "fx-best", "fx-good", "fx-bad");
-  }
-
-  function removeParticles() {
-    if (!scene) return;
-    qsa(".tsp-particle").forEach(p => p.remove());
-  }
-
-  // ★注意：粒を全消しするのは「ランク変化時だけ」にする
-  function clearFxAllHard() {
-    spriteFxLayer.innerHTML = "";
-    clearSceneFxClasses();
-    removeParticles();
-  }
-
-  // legacy note-only
-  function setNoteFxLegacy() {
-    spriteFxLayer.innerHTML = "";
-    const n = document.createElement("div");
-    n.className = "fx-note-only";
-    n.textContent = "♪";
-    n.style.left = "50%";
-    n.style.bottom = "-6px";
-    n.style.transform = "translateX(-50%)";
-    spriteFxLayer.appendChild(n);
-  }
-
-  function rand(min, max) {
-    return min + Math.random() * (max - min);
-  }
-
-  function spawnParticle({ text, xPct, yPct, cls, dur, dx, dy, rot, scale, sizePx }) {
-    if (!scene) return;
-
-    const p = document.createElement("div");
-    p.className = `tsp-particle ${cls}`;
-    p.textContent = text;
-    p.style.left = `${xPct}%`;
-    p.style.top = `${yPct}%`;
-    p.style.setProperty("--tspDur", `${dur}s`);
-    p.style.setProperty("--tspDX", `${dx}px`);
-    p.style.setProperty("--tspDY", `${dy}px`);
-    p.style.setProperty("--tspR", `${rot}deg`);
-    p.style.setProperty("--tspS", `${scale}`);
-    p.style.fontSize = `${sizePx}px`;
-
-    scene.appendChild(p);
-
-    const rmMs = Math.max(900, dur * 1000 + 220);
-    setTimeout(() => { try { p.remove(); } catch {} }, rmMs);
-  }
-
-  // 超ベスト：飛び交う（♪✨混在）
-  function emitSuperbest(dtSec) {
-    if (!scene) return;
-    scene.classList.add("fx-superbest");
-
-    FX.superAcc += dtSec;
-    const interval = 0.06; // 高頻度
-    while (FX.superAcc >= interval) {
-      FX.superAcc -= interval;
-
-      const count = 6;
-      for (let i = 0; i < count; i++) {
-        const isSpark = Math.random() > 0.52;
-        const text = isSpark ? "✨" : "♪";
-
-        const xPct = rand(2, 98);
-        const yPct = rand(2, 98);
-
-        const dx = rand(-140, 140);
-        const dy = rand(-220, 80);
-        const rot = rand(-30, 30);
-        const dur = rand(1.0, 1.9);
-        const scale = rand(0.9, 1.35);
-        const sizePx = isSpark ? rand(16, 24) : rand(14, 22);
-
-        spawnParticle({ text, xPct, yPct, cls: "tsp-fly", dur, dx, dy, rot, scale, sizePx });
-      }
-    }
-  }
-
-  // ベスト：♪が降り注ぐ
-  function emitBest(dtSec) {
-    if (!scene) return;
-    scene.classList.add("fx-best");
-
-    FX.bestAcc += dtSec;
-    const interval = 0.12;
-    while (FX.bestAcc >= interval) {
-      FX.bestAcc -= interval;
-
-      const count = 4;
-      for (let i = 0; i < count; i++) {
-        const isSpark = Math.random() > 0.86;
-        const text = isSpark ? "✨" : "♪";
-
-        const xPct = rand(4, 96);
-        const yPct = rand(-8, 6);
-        const dx = rand(-22, 22);
-        const dy = rand(220, 340);
-        const rot = rand(-12, 12);
-        const dur = rand(1.4, 2.2);
-        const scale = rand(0.9, 1.2);
-        const sizePx = isSpark ? rand(16, 22) : rand(14, 20);
-
-        spawnParticle({ text, xPct, yPct, cls: "tsp-fall", dur, dx, dy, rot, scale, sizePx });
-      }
-    }
-  }
-
-  // 良好：♪がパラパラ
-  function emitGood(dtSec) {
-    if (!scene) return;
-    scene.classList.add("fx-good");
-
-    FX.goodAcc += dtSec;
-    const interval = 0.45;
-    while (FX.goodAcc >= interval) {
-      FX.goodAcc -= interval;
-
-      const count = 1 + (Math.random() > 0.7 ? 1 : 0);
-      for (let i = 0; i < count; i++) {
-        const text = "♪";
-        const xPct = rand(8, 92);
-        const yPct = rand(-6, 10);
-        const dur = rand(1.8, 2.6);
-        const dx = rand(-14, 14);
-        const dy = rand(160, 240);
-        const rot = rand(-14, 14);
-        const scale = rand(0.9, 1.15);
-        const sizePx = rand(13, 18);
-
-        spawnParticle({ text, xPct, yPct, cls: "tsp-drift", dur, dx, dy, rot, scale, sizePx });
-      }
-    }
-  }
-
-  // 最悪：暗い雰囲気（CSSに任せる）
-  function applyBadFx() {
-    if (!scene) return;
-    scene.classList.add("fx-bad");
-  }
-
-  function centerSprite() {
-    WALK.x = 0;
-    applyMoveX(0);
-  }
-
-  function tickIdle(dtSec) {
-    IDLE.timer += dtSec;
-    if (IDLE.timer >= 0.5) {
-      IDLE.timer -= 0.5;
-      IDLE.frame = (IDLE.frame === 1) ? 2 : 1;
-    }
-  }
-
-  function tickWalk(dtSec) {
-    if (WALK.turnTimer > 0) {
-      WALK.turnTimer -= dtSec;
-      setFacing(WALK.facing);
-      renderFrame(3);
-      applyMoveX(WALK.x);
-      return;
-    }
-
-    const dir = (WALK.facing === "right") ? 1 : -1;
-    WALK.x += WALK.speedPxPerSec * dtSec * dir;
-
-    if (WALK.x > WALK.halfRangePx) {
-      WALK.x = WALK.halfRangePx;
-      WALK.facing = "left";
-      WALK.turnTimer = 0.5;
-      WALK.stepTimer = 0;
-    } else if (WALK.x < -WALK.halfRangePx) {
-      WALK.x = -WALK.halfRangePx;
-      WALK.facing = "right";
-      WALK.turnTimer = 0.5;
-      WALK.stepTimer = 0;
-    }
-
-    WALK.stepTimer += dtSec;
-    if (WALK.stepTimer >= 0.5) {
-      WALK.stepTimer -= 0.5;
-      WALK.stepFrame = (WALK.stepFrame === 1) ? 2 : 1;
-    }
-
-    setFacing(WALK.facing);
-    renderFrame(WALK.stepFrame);
-    applyMoveX(WALK.x);
-  }
-
-  function updateHomeNeutralButtonVisibility(rankInfo) {
-    if (!homeNeutralBtn) return;
-    const R = window.TSP_GAME.Rank;
-    const showIt = (rankInfo && rankInfo.rank !== R.neutral);
-    homeNeutralBtn.style.display = showIt ? "block" : "none";
-  }
-
-  // ★ランク変化時だけクリアするためのキー
-  function makeRankKey(info) {
-    // rankだけでなく、背景色用のenvAttrも変わり得るので合わせて判定
-    return `${String(info.rank)}|${String(info.envAttr)}`;
-  }
-
-  function onRankChanged(newKey, info) {
-    // 硬クリア（粒全消し・fxクラス入れ替え）
-    clearFxAllHard();
-
-    // accum reset（切替直後の出方を安定させる）
-    FX.superAcc = 0;
-    FX.bestAcc = 0;
-    FX.goodAcc = 0;
-
-    lastRankKey = newKey;
-    lastEnvAttr = info.envAttr;
-  }
-
-  function renderByCurrentEnv(dtSec) {
-    if (!soul) return;
-
-    const now = new Date();
-    const info = window.TSP_GAME.computeRank(MONSTER, envApplied, now, soul.attribute);
-    const R = window.TSP_GAME.Rank;
-
-    if (info.rank === R.neutral) {
-      envAttributeLabel.textContent = "無属性";
+  // ----------------------------
+  // Boot error display helper
+  // ----------------------------
+  function bootError(msg) {
+    console.error("[boot]", msg);
+    setDiag("エラー（boot） " + msg);
+
+    const bootBox = $id("bootError") || $q(".boot-error") || null;
+    if (bootBox) {
+      bootBox.textContent = "エラー\n（boot）\n" + msg;
+      bootBox.style.display = "block";
     } else {
-      const a = attrJp(info.envAttr);
-      envAttributeLabel.textContent = `${a}（${rankLabel(info.rank)}）`;
-    }
-
-    setHomeBackgroundByEnvAttr(info.envAttr);
-
-    const key = makeRankKey(info);
-    if (key !== lastRankKey) {
-      onRankChanged(key, info);
-    }
-
-    // ★ここでは毎フレーム消さない
-    updateHomeNeutralButtonVisibility(info);
-
-    // ランク別 表情・演出
-    switch (info.rank) {
-      case R.superbest:
-        setFacing("left");
-        renderFrame(7); // 喜び
-        emitSuperbest(dtSec);
-        centerSprite();
-        break;
-
-      case R.best:
-        setFacing("left");
-        renderFrame(7); // 喜び
-        emitBest(dtSec);
-        centerSprite();
-        break;
-
-      case R.good:
-        tickIdle(dtSec);
-        setFacing("left");
-        renderFrame(IDLE.frame); // 通常1/2
-        emitGood(dtSec);
-        centerSprite();
-        break;
-
-      case R.normal:
-        tickIdle(dtSec);
-        setFacing("left");
-        renderFrame(IDLE.frame); // 通常1/2
-        centerSprite();
-        break;
-
-      case R.bad:
-        setFacing("left");
-        renderFrame(8); // ダウン
-        applyBadFx();
-        centerSprite();
-        break;
-
-      case R.neutral:
-      default:
-        // 無属性は歩行（FXはなし、ただし切替時にはhard clear済み）
-        tickWalk(dtSec);
-        break;
+      // 最低限の表示
+      const div = document.createElement("pre");
+      div.style.whiteSpace = "pre-wrap";
+      div.style.padding = "12px";
+      div.style.margin = "12px";
+      div.style.borderRadius = "12px";
+      div.style.background = "rgba(255,0,0,0.08)";
+      div.style.color = "#b00020";
+      div.style.fontFamily = "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace";
+      div.textContent = "エラー\n（boot）\n" + msg;
+      document.body.prepend(div);
     }
   }
 
-  // ===== Growth preview =====
-  function updateGrowthPreviewAndTimer() {
-    if (!soul) return;
+  // ----------------------------
+  // Fallback step arrays (絶対にundefinedにならない)
+  // ----------------------------
+  const FALLBACK_TEMP_STEPS = Object.freeze([
+    -273,
+    -45, -40, -35, -30, -25, -20, -15, -10, -5,
+    0,
+    5, 10, 15, 20, 25, 30, 35, 40, 45,
+    999
+  ]);
 
-    const now = new Date();
-    const info = window.TSP_GAME.computeMinutePreview(soul, MONSTER, envApplied, now, elemCounter);
+  const FALLBACK_HUM_STEPS = Object.freeze([
+    0,
+    5, 10, 15, 20, 25, 30, 35, 40, 45,
+    50,
+    55, 60, 65, 70, 75,
+    80, 85,
+    90, 95,
+    99,
+    100
+  ]);
 
-    if (info.rank === window.TSP_GAME.Rank.neutral) {
-      growthTimer.textContent = "環境成長なし";
-      growthPreview.textContent = "";
+  const FALLBACK_LIGHT_OPTIONS = Object.freeze([0, 50, 100]);
+
+  function getGameStepsSafe() {
+    const G = window.TSP_GAME;
+    const tempSteps = (G && isArr(G.TEMP_STEPS) && G.TEMP_STEPS.length) ? G.TEMP_STEPS : FALLBACK_TEMP_STEPS;
+    const humSteps = (G && isArr(G.HUM_STEPS) && G.HUM_STEPS.length) ? G.HUM_STEPS : FALLBACK_HUM_STEPS;
+    const lightOptions = (G && isArr(G.LIGHT_OPTIONS) && G.LIGHT_OPTIONS.length) ? G.LIGHT_OPTIONS : FALLBACK_LIGHT_OPTIONS;
+
+    return { tempSteps, humSteps, lightOptions };
+  }
+
+  // ----------------------------
+  // Minimal state (localStorage)
+  // ※既存state.jsがあっても壊さないよう、名前空間はTSP_APPにまとめる
+  // ----------------------------
+  const LS_KEY = "TALISPOD_SOUL_V077";
+
+  function loadSoul() {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (!raw) return null;
+      const obj = JSON.parse(raw);
+      return obj && typeof obj === "object" ? obj : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function saveSoul(soul) {
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(soul));
+    } catch (_) {
+      // ignore
+    }
+  }
+
+  function makeDefaultSoul() {
+    // ウインドラゴン（要求済み初期値）
+    return {
+      sagaName: "",
+      nickname: "",
+      isReborn: false,
+      legendzId: "windragon",
+      speciesName: "ウインドラゴン",
+      attribute: "TORNADO",
+      baseStats: { hp: 400, magic: 60, counter: 100, strike: 60, heal: 20 },
+      grow: { hp: 0, magic: 0, counter: 0, strike: 0, heal: 0 },
+      currentHp: 400,
+      // superBest（ここは個別に調整してOK。いまは暫定：-45/5 + 光(=陸上は無視、便宜上0)）
+      superBest: { temp: -45, hum: 5, light: 0 },
+      // 技スロット（仮データ）
+      wazaSlots: Array.from({ length: 15 }, (_, i) => ({ name: "ワザ" + (i + 1), desc: "（仮）" })),
+      // 記憶発行のためのランダムseed
+      seed: Math.random().toString(36).slice(2, 10)
+    };
+  }
+
+  // ----------------------------
+  // Soul code (短縮・コピペ前提)
+  // ----------------------------
+  function encodeSoulCode(soul) {
+    // 短縮用：JSONを小さくしてbase64url
+    const pack = {
+      v: 77,
+      s: soul.sagaName || "",
+      n: soul.nickname || "",
+      id: soul.legendzId || "windragon",
+      sp: soul.speciesName || "ウインドラゴン",
+      a: soul.attribute || "TORNADO",
+      b: soul.baseStats || {},
+      g: soul.grow || {},
+      ch: soul.currentHp,
+      sb: soul.superBest || null,
+      w: (isArr(soul.wazaSlots) ? soul.wazaSlots : []).map(x => x && x.name ? x.name : "（仮）")
+    };
+    const json = JSON.stringify(pack);
+    const b64 = btoa(unescape(encodeURIComponent(json)))
+      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+    return "SOUL:" + b64;
+  }
+
+  function decodeSoulCode(code) {
+    try {
+      const t = String(code || "").trim();
+      if (!t.startsWith("SOUL:")) return null;
+      const b64 = t.slice(5).replace(/-/g, "+").replace(/_/g, "/");
+      // pad
+      const pad = b64.length % 4 ? "=".repeat(4 - (b64.length % 4)) : "";
+      const json = decodeURIComponent(escape(atob(b64 + pad)));
+      const pack = JSON.parse(json);
+      if (!pack || typeof pack !== "object") return null;
+
+      const soul = makeDefaultSoul();
+      soul.sagaName = pack.s || "";
+      soul.nickname = pack.n || "";
+      soul.legendzId = pack.id || "windragon";
+      soul.speciesName = pack.sp || "ウインドラゴン";
+      soul.attribute = pack.a || "TORNADO";
+      soul.baseStats = pack.b || soul.baseStats;
+      soul.grow = pack.g || soul.grow;
+      soul.currentHp = Number.isFinite(pack.ch) ? pack.ch : soul.baseStats.hp;
+      soul.superBest = pack.sb || soul.superBest;
+
+      // 15枠補完
+      const names = isArr(pack.w) ? pack.w : [];
+      soul.wazaSlots = Array.from({ length: 15 }, (_, i) => ({
+        name: names[i] || ("ワザ" + (i + 1)),
+        desc: "（仮）"
+      }));
+
+      soul.isReborn = true;
+      return soul;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ----------------------------
+  // DOM bindings (ゆるく拾う)
+  // ----------------------------
+  const DOM = {
+    // screens
+    screenUnreborn: null,
+    screenReborn: null,
+
+    // inputs/buttons
+    inputSaga: null,
+    inputNickname: null,
+    btnRebornFromMemory: null,
+    btnFindNewSoul: null,
+    inputMemoryCode: null,
+
+    // tabs
+    tabBar: null,
+    tabButtons: [],
+    tabContents: [],
+
+    // env UI
+    tempSlider: null,
+    humSlider: null,
+    lightButtons: [],
+    envDecideBtn: null,
+
+    // labels
+    labelTempVal: null,
+    labelHumVal: null,
+    labelLightVal: null,
+    labelEnvPreview: null,
+    labelHomeEnv: null,
+
+    // sprite
+    spriteViewport: null,
+    spriteSheetLayer: null,
+    spriteFxLayer: null,
+    spriteMover: null,
+
+    // comeback
+    btnComeback: null,
+    modal: null,
+    modalCodeText: null,
+    modalCopyBtn: null,
+    modalRebornBtn: null,
+    modalBackBtn: null,
+    modalCloseBtn: null
+  };
+
+  function bindDom() {
+    // screens（存在しない場合もあるのでガード）
+    DOM.screenUnreborn = $id("screenUnreborn") || $q("#unreborn") || $q(".screen-unreborn");
+    DOM.screenReborn = $id("screenReborn") || $q("#reborn") || $q(".screen-reborn");
+
+    // inputs/buttons（未リボーン）
+    DOM.inputSaga = $id("sagaNameInput") || $q('input[name="sagaName"]') || $q("#sagaName");
+    DOM.inputMemoryCode = $id("memoryCodeInput") || $q('textarea[name="memoryCode"]') || $q("#memoryCode");
+    DOM.btnRebornFromMemory = $id("btnRebornFromMemory") || $q("#rebornFromMemory");
+    DOM.btnFindNewSoul = $id("btnFindNewSoul") || $q("#findNewSoul");
+
+    // nickname input（レジェンズタブにある想定）
+    DOM.inputNickname = $id("nicknameInput") || $q('input[name="nickname"]') || $q("#nickname");
+
+    // tabs
+    DOM.tabBar = $id("tabBar") || $q(".tab-bar");
+    DOM.tabButtons = Array.from(document.querySelectorAll("[data-tab-btn]"));
+    DOM.tabContents = Array.from(document.querySelectorAll("[data-tab-content]"));
+
+    // env UI
+    DOM.tempSlider = $id("tempSlider") || $q("#tempSlider");
+    DOM.humSlider = $id("humiditySlider") || $q("#humiditySlider") || $q("#humSlider");
+    DOM.lightButtons = Array.from(document.querySelectorAll("[data-light-btn]"));
+    DOM.envDecideBtn = $id("btnEnvDecide") || $q("#envDecide");
+
+    // labels
+    DOM.labelTempVal = $id("tempVal") || $q("[data-temp-val]");
+    DOM.labelHumVal = $id("humVal") || $q("[data-hum-val]");
+    DOM.labelLightVal = $id("lightVal") || $q("[data-light-val]");
+    DOM.labelEnvPreview = $id("envPreview") || $q("[data-env-preview]");
+    DOM.labelHomeEnv = $id("homeEnvLabel") || $q("[data-home-env]");
+
+    // sprite
+    DOM.spriteViewport = $id("spriteViewport") || $q("#spriteViewport");
+    DOM.spriteSheetLayer = $id("spriteSheetLayer") || $q("#spriteSheetLayer");
+    DOM.spriteFxLayer = $id("spriteFxLayer") || $q("#spriteFxLayer");
+    DOM.spriteMover = $id("spriteMover") || $q("#spriteMover");
+
+    // comeback + modal
+    DOM.btnComeback = $id("btnComeback") || $q("#comeBack") || $q("[data-comeback]");
+    DOM.modal = $id("comebackModal") || $q("#comebackModal") || $q(".modal");
+    DOM.modalCodeText = $id("comebackCodeText") || $q("#comebackCodeText") || $q("[data-modal-code]");
+    DOM.modalCopyBtn = $id("btnCopyCode") || $q("#copyCode");
+    DOM.modalRebornBtn = $id("btnDoComeback") || $q("#doComeback");
+    DOM.modalBackBtn = $id("btnBackToGame") || $q("#backToGame");
+    DOM.modalCloseBtn = $id("btnCloseModal") || $q("#closeModal");
+  }
+
+  // ----------------------------
+  // App runtime state
+  // ----------------------------
+  const APP = {
+    soul: null,
+    envDraft: { temp: 0, hum: 50, light: 50 },
+    envActive: { temp: 0, hum: 50, light: 50 },
+    currentTab: "home",
+    // sprite/anim
+    faceIndex: 1,
+    facing: "right",
+    walkDir: 1,
+    walkX: 0,
+    walkSpeedPx: 0.35, // 落ち着いた歩行
+    walkRangePx: 70,
+    animTimer: null
+  };
+
+  // ----------------------------
+  // Slider init (防御版)
+  // ----------------------------
+  function initSlidersSafely() {
+    const { tempSteps, humSteps } = getGameStepsSafe();
+
+    if (!DOM.tempSlider || !DOM.humSlider) {
+      // 環境UIが無い構造でも落とさない
+      setDiag(diagText("sliders:missing"));
       return;
     }
 
-    const sec = Math.max(0, Math.floor(60 - secondsAccum));
-    const mm = String(Math.floor(sec / 60)).padStart(2, "0");
-    const ss = String(sec % 60).padStart(2, "0");
-    growthTimer.textContent = `${mm}:${ss}`;
+    // indexとして扱う
+    DOM.tempSlider.min = "0";
+    DOM.tempSlider.max = String(Math.max(0, tempSteps.length - 1));
+    DOM.tempSlider.step = "1";
 
-    const parts = [];
-    if (info.heal > 0) parts.push(`回復+${info.heal}`);
-    if (info.hpDmg > 0) parts.push(`HP-${info.hpDmg}`);
-    parts.push(`HP+${info.hpGrow}`);
+    DOM.humSlider.min = "0";
+    DOM.humSlider.max = String(Math.max(0, humSteps.length - 1));
+    DOM.humSlider.step = "1";
 
-    if (info.elemKey) {
-      const jp = { fire: "マホウ", wind: "カウンター", earth: "ダゲキ", water: "カイフク" }[info.elemKey];
-      parts.push(`${jp}+${info.elemGrow}`);
+    // draftの値を index に反映
+    DOM.tempSlider.value = String(findNearestIndex(tempSteps, APP.envDraft.temp));
+    DOM.humSlider.value = String(findNearestIndex(humSteps, APP.envDraft.hum));
+
+    updateEnvDraftFromUI();
+    updateEnvLabels();
+    updateEnvPreview();
+  }
+
+  function findNearestIndex(arr, value) {
+    let bestI = 0;
+    let bestD = Infinity;
+    for (let i = 0; i < arr.length; i++) {
+      const d = Math.abs(Number(arr[i]) - Number(value));
+      if (d < bestD) { bestD = d; bestI = i; }
+    }
+    return bestI;
+  }
+
+  function updateEnvDraftFromUI() {
+    const { tempSteps, humSteps } = getGameStepsSafe();
+
+    if (DOM.tempSlider && DOM.humSlider) {
+      const ti = clamp(parseInt(DOM.tempSlider.value, 10) || 0, 0, tempSteps.length - 1);
+      const hi = clamp(parseInt(DOM.humSlider.value, 10) || 0, 0, humSteps.length - 1);
+      APP.envDraft.temp = Number(tempSteps[ti]);
+      APP.envDraft.hum = Number(humSteps[hi]);
     }
 
-    growthPreview.textContent = parts.join(" / ");
+    // 光（陸上）/水深（水中）
+    // 既存UIがボタン式の想定：data-light-btn の value に 0/50/100
+    const active = DOM.lightButtons.find(btn => btn.classList.contains("active"));
+    if (active) {
+      APP.envDraft.light = Number(active.getAttribute("data-light-value") || active.value || 50);
+    } else if (Number.isFinite(APP.envDraft.light) === false) {
+      APP.envDraft.light = 50;
+    }
+
+    // 水中の時は light を水深として扱う（0/50/100）
+    if (APP.envDraft.hum === 100) {
+      APP.envDraft.light = (APP.envDraft.light === 0 || APP.envDraft.light === 50 || APP.envDraft.light === 100) ? APP.envDraft.light : 50;
+    }
   }
 
-  // ===== Comeback modal =====
-  let comebackModalBound = false;
+  function updateEnvLabels() {
+    if (DOM.labelTempVal) DOM.labelTempVal.textContent = String(APP.envDraft.temp) + "℃";
+    if (DOM.labelHumVal) DOM.labelHumVal.textContent = String(APP.envDraft.hum) + "%";
 
-  function ensureComebackModal() {
-    if (comebackModal) return comebackModal;
+    // 表記：湿度100のときだけ水深
+    if (DOM.labelLightVal) {
+      const label = (APP.envDraft.hum === 100) ? (String(APP.envDraft.light) + "（水深）") : (String(APP.envDraft.light) + "W");
+      DOM.labelLightVal.textContent = label;
+    }
+  }
 
-    const modal = document.createElement("div");
-    modal.className = "modal-backdrop";
-    modal.innerHTML = `
-      <div class="modal">
-        <div class="modal-title">ソウルドールの記憶</div>
-        <textarea id="cbCodeArea" class="modal-code" readonly></textarea>
-        <div class="modal-actions">
-          <button id="cbCopyBtn">ソウルドールの記憶の保存(コピー)</button>
-          <button id="cbRebornBtn">カムバックする</button>
-          <button id="cbCloseBtn">育成に戻る</button>
-        </div>
-      </div>
-    `;
-    document.body.appendChild(modal);
+  function updateEnvPreview() {
+    const G = window.TSP_GAME;
+    if (!DOM.labelEnvPreview) return;
 
-    modal.addEventListener("click", (e) => {
-      if (e.target === modal) closeComebackModal();
+    // 「予想環境」は属性のみ（ワクワク維持）
+    if (G && typeof G.previewAttribute === "function") {
+      const p = G.previewAttribute(APP.envDraft, nowDate());
+      DOM.labelEnvPreview.textContent = p && p.label ? p.label : "無属性";
+      return;
+    }
+    DOM.labelEnvPreview.textContent = "無属性";
+  }
+
+  function diagText(extra) {
+    const G = window.TSP_GAME;
+    const hasGame = !!G;
+    const ts = hasGame && isArr(G.TEMP_STEPS) ? G.TEMP_STEPS.length : 0;
+    const hs = hasGame && isArr(G.HUM_STEPS) ? G.HUM_STEPS.length : 0;
+    return `TSP_GAME:${hasGame ? "OK" : "NG"} TEMP:${ts} HUM:${hs} ${extra || ""}`.trim();
+  }
+
+  // ----------------------------
+  // Tabs (最低限)
+  // ----------------------------
+  function showTab(tabKey) {
+    APP.currentTab = tabKey;
+
+    // buttons
+    DOM.tabButtons.forEach(btn => {
+      const key = btn.getAttribute("data-tab-btn");
+      btn.classList.toggle("active", key === tabKey);
     });
 
-    comebackModal = modal;
-    return modal;
+    // contents
+    DOM.tabContents.forEach(p => {
+      const key = p.getAttribute("data-tab-content");
+      p.style.display = (key === tabKey) ? "block" : "none";
+    });
   }
 
-  function openComebackModal(code) {
-    const m = ensureComebackModal();
-    const area = $("cbCodeArea");
-    area.value = code;
+  function setTabsVisible(visible) {
+    if (DOM.tabBar) DOM.tabBar.style.display = visible ? "flex" : "none";
+    // もしヘッダー内にカムバックボタンがある設計なら一緒に隠す
+    if (DOM.btnComeback) DOM.btnComeback.style.display = visible ? "inline-flex" : "none";
+  }
 
-    if (!comebackModalBound) {
-      comebackModalBound = true;
+  // ----------------------------
+  // Sprite rendering (windragon 96x64, frame 24x32)
+  // 1..8 表情：1通常,2差分,3振り向き,4魔法,5打撃,6被ダメ,7喜び,8ダウン
+  // ----------------------------
+  function spriteUrlForSoul(soul) {
+    const id = (soul && soul.legendzId) ? soul.legendzId : "windragon";
+    return `assets/sprites/${id}.png`;
+  }
 
-      $("cbCopyBtn").onclick = async () => {
-        try {
-          if (navigator.clipboard && navigator.clipboard.writeText) {
-            await navigator.clipboard.writeText(area.value);
-            toast("記憶をコピーしました");
-          } else {
-            area.focus();
-            area.select();
-            openNotice("コピー", "自動コピー非対応です。\n選択された状態なので手動でコピーしてください。");
-          }
-        } catch (e) {
-          showError("copy", e);
+  function setSpriteFace(face, facing) {
+    APP.faceIndex = clamp(face, 1, 8);
+    APP.facing = (facing === "left") ? "left" : "right";
+
+    if (!DOM.spriteSheetLayer || !DOM.spriteViewport) return;
+
+    // 重要：切り抜き範囲
+    DOM.spriteViewport.style.width = "24px";
+    DOM.spriteViewport.style.height = "32px";
+    DOM.spriteViewport.style.overflow = "hidden"; // ← これがないと「描写範囲が広い」になる
+
+    // 背景
+    const sheet = DOM.spriteSheetLayer;
+    sheet.style.width = "96px";
+    sheet.style.height = "64px";
+    sheet.style.backgroundRepeat = "no-repeat";
+    sheet.style.imageRendering = "pixelated";
+
+    // 反転は最後に transform で
+    sheet.style.transformOrigin = "top left";
+    sheet.style.transform = (APP.facing === "left") ? "scaleX(-1)" : "scaleX(1)";
+
+    // 1..8 → col,row
+    const idx = APP.faceIndex - 1;
+    const col = idx % 4;
+    const row = Math.floor(idx / 4);
+    const x = col * 24;
+    const y = row * 32;
+
+    // 背景位置：左向き基準で座標指定（あなたのルール通り）
+    sheet.style.backgroundPosition = `-${x}px -${y}px`;
+  }
+
+  function ensureSpriteImage() {
+    if (!DOM.spriteSheetLayer) return;
+    const url = spriteUrlForSoul(APP.soul);
+    DOM.spriteSheetLayer.style.backgroundImage = `url("${url}")`;
+    DOM.spriteSheetLayer.style.backgroundSize = "96px 64px";
+  }
+
+  function updateSpritePosition() {
+    // spriteMover があるならそれを動かす。無ければ viewport を動かす
+    const mover = DOM.spriteMover || DOM.spriteViewport;
+    if (!mover) return;
+
+    // 中央寄せ：viewportをコンテナ内中央に置けるならOKだが、
+    // ここでは "translateX" で往復だけ付ける
+    mover.style.position = mover.style.position || "relative";
+
+    // 右向き＝正向き、左向き＝反転（sheet側）
+    // 進行方向に合わせて反転する
+    const isGoingRight = APP.walkDir > 0;
+    setSpriteFace(APP.faceIndex, isGoingRight ? "right" : "left");
+
+    mover.style.transform = `translateX(${APP.walkX}px)`;
+  }
+
+  function stopAnim() {
+    if (APP.animTimer) {
+      clearInterval(APP.animTimer);
+      APP.animTimer = null;
+    }
+  }
+
+  function startHomeAnim() {
+    stopAnim();
+    if (!DOM.spriteViewport || !DOM.spriteSheetLayer) return;
+
+    // 往復距離（画面中心から5〜10歩相当）
+    APP.walkRangePx = 70;
+    APP.walkSpeedPx = 0.35;
+
+    let frameTick = 0;
+    let turning = 0; // 0=通常, >0=振り向き中の残りtick
+
+    APP.walkDir = 1;
+    APP.walkX = 0;
+
+    APP.animTimer = setInterval(() => {
+      // 表情ランクで切替
+      const envRank = currentEnvRank();
+      if (envRank.rankKey === "WORST") {
+        APP.faceIndex = 8; // ダウン
+        turning = 0;
+      } else if (envRank.rankKey === "SUPER_BEST" || envRank.rankKey === "BEST") {
+        APP.faceIndex = 7; // 喜び
+        turning = 0;
+      } else if (envRank.rankKey === "GOOD") {
+        // 良好：通常1/2を0.5秒ごと（♪演出はCSS側想定）
+        APP.faceIndex = (Math.floor(frameTick / 30) % 2) ? 2 : 1; // 60fps換算の簡易
+        turning = 0;
+      } else if (envRank.rankKey === "NEUTRAL") {
+        // 無属性：歩行（通常1/2）＋折返しで振り向き0.5秒
+        if (turning > 0) {
+          APP.faceIndex = 3;
+          turning--;
+        } else {
+          APP.faceIndex = (Math.floor(frameTick / 30) % 2) ? 2 : 1;
         }
+      } else {
+        // 普通
+        APP.faceIndex = (Math.floor(frameTick / 30) % 2) ? 2 : 1;
+        turning = 0;
+      }
+
+      // 歩行は無属性のみ（仕様）
+      if (envRank.rankKey === "NEUTRAL") {
+        APP.walkX += APP.walkDir * APP.walkSpeedPx * 6; // 見た目速度
+        if (APP.walkX > APP.walkRangePx) {
+          APP.walkX = APP.walkRangePx;
+          APP.walkDir = -1;
+          turning = 30; // 0.5秒相当（60fps基準）
+        } else if (APP.walkX < -APP.walkRangePx) {
+          APP.walkX = -APP.walkRangePx;
+          APP.walkDir = 1;
+          turning = 30;
+        }
+      } else {
+        APP.walkX = 0;
+        APP.walkDir = 1;
+      }
+
+      updateSpritePosition();
+      frameTick++;
+    }, 1000 / 60);
+  }
+
+  // ----------------------------
+  // Environment rank helpers
+  // ----------------------------
+  function currentEnvRank() {
+    const G = window.TSP_GAME;
+    if (!G || typeof G.rankEnv !== "function" || !APP.soul) {
+      return {
+        rankKey: "NORMAL",
+        rankLabel: "普通環境",
+        areaName: "無属性",
+        envAttrLabel: "無属性",
+        lightOk: true
       };
-
-      $("cbRebornBtn").onclick = () => {
-        try {
-          closeComebackModal();
-          soul = null;
-          setHeader();
-          show(startView);
-        } catch (e) {
-          showError("cbRebornBtn", e);
-        }
-      };
-
-      $("cbCloseBtn").onclick = () => closeComebackModal();
     }
-
-    m.classList.add("active");
+    return G.rankEnv(APP.soul, APP.envActive, nowDate());
   }
 
-  function closeComebackModal() {
-    if (!comebackModal) return;
-    comebackModal.classList.remove("active");
-  }
+  function refreshHomeEnvLabel() {
+    if (!DOM.labelHomeEnv || !APP.soul) return;
 
-  function doComeback() {
-    if (!soul) return;
-    const code = window.TSP_STATE.makeSoulCode(soul);
-    openComebackModal(code);
-  }
+    const r = currentEnvRank();
 
-  // ===== Confirm modal (ムゾクセイ？ only) =====
-  function ensureConfirmModal() {
-    if (confirmModal) return confirmModal;
-
-    const modal = document.createElement("div");
-    modal.className = "modal-backdrop";
-    modal.innerHTML = `
-      <div class="modal">
-        <div class="modal-title">ムゾクセイ？</div>
-        <div class="modal-actions" style="margin-top:12px;">
-          <button id="cfYesBtn">はい</button>
-          <button id="cfNoBtn" class="ghost">いいえ</button>
-        </div>
-      </div>
-    `;
-    document.body.appendChild(modal);
-
-    modal.addEventListener("click", (e) => {
-      if (e.target === modal) closeConfirmModal();
-    });
-
-    confirmModal = modal;
-    return modal;
-  }
-
-  function openConfirmModal(onYes) {
-    const m = ensureConfirmModal();
-
-    $("cfYesBtn").onclick = () => {
-      try {
-        closeConfirmModal();
-        onYes && onYes();
-      } catch (e) { showError("confirmYes", e); }
-    };
-    $("cfNoBtn").onclick = () => closeConfirmModal();
-
-    m.classList.add("active");
-  }
-
-  function closeConfirmModal() {
-    if (!confirmModal) return;
-    confirmModal.classList.remove("active");
-  }
-
-  // ===== Loop =====
-  function rafLoop(msNow) {
-    if (lastRafMs == null) lastRafMs = msNow;
-    const dtSec = Math.min(0.05, (msNow - lastRafMs) / 1000);
-    lastRafMs = msNow;
-
-    const tab = activeTabKey();
-
-    if (soul && tab === "home") {
-      secondsAccum += dtSec;
-
-      if (secondsAccum >= 60) {
-        secondsAccum -= 60;
-        try {
-          window.TSP_GAME.applyOneMinute(soul, MONSTER, envApplied, new Date(), elemCounter);
-          refreshStatsUI();
-        } catch (e) {
-          showError("applyOneMinute", e);
-        }
-      }
-
-      try {
-        updateGrowthPreviewAndTimer();
-        renderByCurrentEnv(dtSec);
-      } catch (e) {
-        showError("homeTickRender", e);
-      }
+    // ホームはエリア名＋ランク
+    if (r.rankKey === "NEUTRAL") {
+      DOM.labelHomeEnv.textContent = "無属性環境";
+      return;
     }
-
-    requestAnimationFrame(rafLoop);
+    const areaName = r.areaName || "未知";
+    const rankLabel = r.rankLabel || "";
+    DOM.labelHomeEnv.textContent = `${areaName} / ${rankLabel}`;
   }
 
-  // ===== Neutral resets =====
-  function resetToNeutralEnvApplied() {
-    envApplied = { temp: 0, hum: 50, light: 50 };
-    secondsAccum = 0;
+  // ----------------------------
+  // Comeback modal (簡易)
+  // ----------------------------
+  function openModal(code) {
+    if (!DOM.modal) return;
+    DOM.modal.style.display = "block";
+    if (DOM.modalCodeText) DOM.modalCodeText.value = code || "";
 
-    // rank tracking reset（次回描画で確実に切替扱い）
-    lastRankKey = null;
-    lastEnvAttr = null;
-
-    updateGrowthPreviewAndTimer();
-    renderByCurrentEnv(0);
+    // セマンティクス（ボタン文言がHTML側にある想定）
+    setDiag(diagText("modal"));
   }
 
-  function resetToNeutralEnvDraft() {
-    envDraft = { temp: 0, hum: 50, light: 50 };
-    setSlidersFromDraft();
-    setLightDraft(50);
-    refreshEnvUI();
+  function closeModal() {
+    if (!DOM.modal) return;
+    DOM.modal.style.display = "none";
   }
 
-  // ===== Reborn pipeline =====
-  function pipelineAfterReborn() {
-    envDraft = { temp: 0, hum: 50, light: 50 };
-    envApplied = { ...envDraft };
-    secondsAccum = 0;
-
-    setSlidersFromDraft();
-    setLightDraft(50);
-    refreshEnvUI();
-
-    setSpriteSheet();
-    lastRafMs = null;
-
-    WALK.x = 0; WALK.facing = "right"; WALK.stepTimer = 0; WALK.stepFrame = 1; WALK.turnTimer = 0;
-    IDLE.timer = 0; IDLE.frame = 1;
-
-    FX.superAcc = 0;
-    FX.bestAcc = 0;
-    FX.goodAcc = 0;
-
-    lastRankKey = null;
-    lastEnvAttr = null;
-
-    setHeader();
-    refreshStatsUI();
-    refreshCrystalsUI();
-
-    renderSkillsUI();
-    bindSkillsClickOnce();
-
-    show(mainView);
-    switchTab("home");
-
-    updateGrowthPreviewAndTimer();
-    renderByCurrentEnv(0);
-  }
-
-  // ===== Bind events =====
-  function bindEvents() {
-    tabBtns.forEach((btn) => {
-      btn.addEventListener("click", () => {
-        if (uiLocked) return;
-        try {
-          switchTab(btn.dataset.tab);
-
-          if (btn.dataset.tab === "home") {
-            updateGrowthPreviewAndTimer();
-            renderByCurrentEnv(0);
-          }
-        } catch (e) {
-          showError("tabSwitch", e);
-        }
-      });
-    });
-
-    newSoulBtn.addEventListener("click", () => {
-      try {
-        const saga = safeText(sagaInput.value);
-        if (!saga) return openNotice("入力", "サーガ名を入力してください");
-        soul = window.TSP_STATE.newSoulWindragon(saga);
-        pipelineAfterReborn();
-      } catch (e) {
-        showError("newReborn", e);
-      }
-    });
-
-    textRebornBtn.addEventListener("click", () => {
-      try {
-        const saga = safeText(sagaInput.value);
-        if (!saga) return openNotice("入力", "サーガ名を入力してください");
-
-        const code = safeText(soulTextInput.value);
-        if (!code) return openNotice("記憶", "記憶が空です");
-
-        const parsed = window.TSP_STATE.parseSoulCode(code);
-        window.TSP_STATE.assertSagaMatch(parsed, saga);
-
-        soul = parsed;
-        pipelineAfterReborn();
-      } catch (e) {
-        showError("memoryReborn", e);
-      }
-    });
-
-    comebackBtn.addEventListener("click", () => {
-      try { doComeback(); }
-      catch (e) { showError("comeback", e); }
-    });
-
-    if (homeNeutralBtn) {
-      homeNeutralBtn.addEventListener("click", () => {
-        try {
-          if (!soul) return;
-          openConfirmModal(() => {
-            resetToNeutralEnvApplied();
-            resetToNeutralEnvDraft();
-            toast("無属性環境に戻しました");
-          });
-        } catch (e) {
-          showError("homeNeutralBtn", e);
-        }
-      });
-    }
-
-    nicknameApplyBtn.addEventListener("click", () => {
-      try {
-        if (!soul) return;
-        soul.nickname = safeText(nicknameInput.value);
-        setHeader();
-        toast("ニックネームを更新しました");
-      } catch (e) {
-        showError("nicknameApply", e);
-      }
-    });
-
-    const onEnvInput = () => {
-      try {
-        readDraftFromSlidersOnly();
-        refreshEnvUI();
-      } catch (e) {
-        showError("envInput", e);
-      }
-    };
-    tempSlider.addEventListener("input", onEnvInput);
-    humiditySlider.addEventListener("input", onEnvInput);
-
-    neutralBtn.addEventListener("click", () => {
-      try {
-        resetToNeutralEnvDraft();
-        toast("ドラフトを無属性に戻しました");
-      } catch (e) { showError("neutralBtn", e); }
-    });
-
-    const bindLightBtn = (btn, val) => {
-      btn.addEventListener("click", () => {
-        try {
-          setLightDraft(val);
-          refreshEnvUI();
-        } catch (e) {
-          showError("lightBtn", e);
-        }
-      });
-    };
-    bindLightBtn(lightBtn0, 0);
-    bindLightBtn(lightBtn50, 50);
-    bindLightBtn(lightBtn100, 100);
-
-    applyEnvBtn.addEventListener("click", async () => {
-      try {
-        await playAdventureAndApply();
-
-        // 環境確定後は必ず切替扱いにして、FXが出ない事故を防ぐ
-        lastRankKey = null;
-        lastEnvAttr = null;
-
-      } catch (e) {
-        lockUI(false);
-        showError("applyEnvBtn", e);
-      }
-    });
-  }
-
-  // ===== Boot =====
-  let booted = false;
-
-  function boot() {
-    if (booted) return;
-    booted = true;
-
+  function copyToClipboard(text) {
+    // iOS/Android 互換のため、execCommand fallback
     try {
-      if (!window.TSP_STATE) throw new Error("TSP_STATEがありません（state.js未読込）");
-      if (!window.TSP_GAME) throw new Error("TSP_GAMEがありません（game.js未読込）");
-
-      startView = must("startView");
-      mainView = must("mainView");
-
-      headerLine1 = must("headerLine1");
-      headerLine2 = must("headerLine2");
-      headerLine3 = must("headerLine3");
-
-      sagaInput = must("sagaInput");
-      soulTextInput = must("soulTextInput");
-      newSoulBtn = must("newSoulBtn");
-      textRebornBtn = must("textRebornBtn");
-
-      tabBtns = qsa(".tab-btn");
-      tabEls = {
-        home: must("tab-home"),
-        environment: must("tab-environment"),
-        legendz: must("tab-legendz"),
-        crystal: must("tab-crystal"),
-      };
-
-      envAttributeLabel = must("envAttributeLabel");
-      growthTimer = must("growthTimer");
-      growthPreview = must("growthPreview");
-      comebackBtn = must("comebackBtn");
-      homeNeutralBtn = $("homeNeutralBtn");
-
-      spriteMover = must("spriteMover");
-      spriteViewport = must("spriteViewport");
-      spriteSheetLayer = must("spriteSheetLayer");
-      spriteFxLayer = must("spriteFxLayer");
-      scene = document.querySelector(".scene");
-
-      tempSlider = must("tempSlider");
-      humiditySlider = must("humiditySlider");
-      tempValue = must("tempValue");
-      humidityValue = must("humidityValue");
-      lightValue = must("lightValue");
-      lightLabel = must("lightLabel");
-
-      envPreviewLabel = must("envPreviewLabel");
-      neutralBtn = must("neutralBtn");
-      applyEnvBtn = must("applyEnvBtn");
-
-      lightBtn0 = must("lightBtn0");
-      lightBtn50 = must("lightBtn50");
-      lightBtn100 = must("lightBtn100");
-
-      speciesName = must("speciesName");
-      nicknameInput = must("nicknameInput");
-      nicknameApplyBtn = must("nicknameApplyBtn");
-      legendzAttribute = must("legendzAttribute");
-      hpStat = must("hpStat");
-      magicStat = must("magicStat");
-      counterStat = must("counterStat");
-      strikeStat = must("strikeStat");
-      healStat = must("healStat");
-
-      skillSlots = $("skillSlots");
-      crystalList = must("crystalList");
-
-      show(startView);
-      setHeader();
-
-      initSliders();
-
-      envDraft = { temp: 0, hum: 50, light: 50 };
-      envApplied = { ...envDraft };
-      setSlidersFromDraft();
-      setLightDraft(50);
-      refreshEnvUI();
-
-      spriteViewport.style.width = (SHEET.frameW * SHEET.scale) + "px";
-      spriteViewport.style.height = (SHEET.frameH * SHEET.scale) + "px";
-      spriteSheetLayer.style.width = (96 * SHEET.scale) + "px";
-      spriteSheetLayer.style.height = (64 * SHEET.scale) + "px";
-      spriteSheetLayer.style.backgroundRepeat = "no-repeat";
-      spriteSheetLayer.style.backgroundSize = `${96 * SHEET.scale}px ${64 * SHEET.scale}px`;
-
-      setSpriteSheet();
-      setFacing("left");
-      renderFrame(1);
-      applyMoveX(0);
-
-      renderSkillsUI();
-      bindSkillsClickOnce();
-
-      bindEvents();
-      requestAnimationFrame(rafLoop);
-
-    } catch (e) {
-      booted = false;
-      showError("boot", e);
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        return navigator.clipboard.writeText(text);
+      }
+    } catch (_) {}
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      return Promise.resolve();
+    } catch (_) {
+      return Promise.reject();
     }
   }
 
-  window.addEventListener("load", boot, { once: true });
+  // ----------------------------
+  // Reborn flow
+  // ----------------------------
+  function showUnrebornScreen() {
+    if (DOM.screenUnreborn) DOM.screenUnreborn.style.display = "block";
+    if (DOM.screenReborn) DOM.screenReborn.style.display = "none";
+    setTabsVisible(false);
+    stopAnim();
+  }
 
+  function showRebornScreen() {
+    if (DOM.screenUnreborn) DOM.screenUnreborn.style.display = "none";
+    if (DOM.screenReborn) DOM.screenReborn.style.display = "block";
+    setTabsVisible(true);
+    showTab("home");
+    ensureSpriteImage();
+    setSpriteFace(1, "right");
+    startHomeAnim();
+    refreshHomeEnvLabel();
+  }
+
+  function doRebornNew() {
+    const saga = DOM.inputSaga ? String(DOM.inputSaga.value || "").trim() : "";
+    if (!saga) {
+      bootError("サーガ名が空です");
+      return;
+    }
+    APP.soul = makeDefaultSoul();
+    APP.soul.sagaName = saga;
+    APP.soul.isReborn = true;
+
+    // 新規ウインドラゴンはニックネーム未登録（要望）
+    APP.soul.nickname = "";
+
+    APP.envActive = { temp: 0, hum: 50, light: 50 };
+    APP.envDraft = { temp: 0, hum: 50, light: 50 };
+
+    saveSoul(APP.soul);
+    showRebornScreen();
+  }
+
+  function doRebornFromMemory() {
+    const saga = DOM.inputSaga ? String(DOM.inputSaga.value || "").trim() : "";
+    const code = DOM.inputMemoryCode ? String(DOM.inputMemoryCode.value || "").trim() : "";
+    if (!saga) {
+      bootError("サーガ名が空です");
+      return;
+    }
+    const soul = decodeSoulCode(code);
+    if (!soul) {
+      bootError("記憶が空です / 不正です");
+      return;
+    }
+    if (soul.sagaName !== saga) {
+      bootError("リボーン失敗（サーガ名が一致しません）");
+      return;
+    }
+    APP.soul = soul;
+
+    // 記憶からのリボーンは「環境は保存しない」＝無属性に戻す（要望）
+    APP.envActive = { temp: 0, hum: 50, light: 50 };
+    APP.envDraft = { temp: 0, hum: 50, light: 50 };
+
+    // HP補完（NaN回避）
+    const maxHp = (APP.soul.baseStats && Number(APP.soul.baseStats.hp)) || 400;
+    if (!Number.isFinite(APP.soul.currentHp)) APP.soul.currentHp = maxHp;
+
+    saveSoul(APP.soul);
+    showRebornScreen();
+  }
+
+  // ----------------------------
+  // Env decide
+  // ----------------------------
+  function applyEnvDraft() {
+    APP.envActive = { temp: APP.envDraft.temp, hum: APP.envDraft.hum, light: APP.envDraft.light };
+
+    // ホーム更新
+    refreshHomeEnvLabel();
+
+    // 無属性なら育成タイマー非表示…等は既存UI側がやってる想定
+    // ここではアニメ制御のみ
+    startHomeAnim();
+  }
+
+  // ----------------------------
+  // Event wiring
+  // ----------------------------
+  function wireEvents() {
+    // Tab click
+    DOM.tabButtons.forEach(btn => {
+      btn.addEventListener("click", () => {
+        const key = btn.getAttribute("data-tab-btn");
+        if (!key) return;
+        showTab(key);
+        // ホームに戻ったらアニメ再開
+        if (key === "home") startHomeAnim();
+        else stopAnim();
+      });
+    });
+
+    // Slider change
+    if (DOM.tempSlider) {
+      DOM.tempSlider.addEventListener("input", () => {
+        updateEnvDraftFromUI();
+        updateEnvLabels();
+        updateEnvPreview();
+      });
+    }
+    if (DOM.humSlider) {
+      DOM.humSlider.addEventListener("input", () => {
+        updateEnvDraftFromUI();
+        updateEnvLabels();
+        updateEnvPreview();
+      });
+    }
+
+    // Light buttons
+    DOM.lightButtons.forEach(btn => {
+      btn.addEventListener("click", () => {
+        DOM.lightButtons.forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        updateEnvDraftFromUI();
+        updateEnvLabels();
+        updateEnvPreview();
+      });
+    });
+
+    // Env decide
+    if (DOM.envDecideBtn) {
+      DOM.envDecideBtn.addEventListener("click", () => {
+        // 既存の冒険アニメ（3秒）をHTML/CSS側でやってる想定。
+        // ここでは遅延して反映だけする（フリーズ回避）
+        setDiag(diagText("env:decide"));
+        const delayMs = 3200;
+        setTimeout(() => {
+          applyEnvDraft();
+          showTab("home");
+        }, delayMs);
+      });
+    }
+
+    // Reborn buttons
+    if (DOM.btnFindNewSoul) DOM.btnFindNewSoul.addEventListener("click", doRebornNew);
+    if (DOM.btnRebornFromMemory) DOM.btnRebornFromMemory.addEventListener("click", doRebornFromMemory);
+
+    // Nickname edit
+    if (DOM.inputNickname) {
+      DOM.inputNickname.addEventListener("input", () => {
+        if (!APP.soul) return;
+        APP.soul.nickname = String(DOM.inputNickname.value || "");
+        saveSoul(APP.soul);
+      });
+    }
+
+    // Comeback
+    if (DOM.btnComeback) {
+      DOM.btnComeback.addEventListener("click", () => {
+        if (!APP.soul) return;
+        // 記憶発行：環境は保存しない（＝コードには入れない／decode側で無属性に戻す）
+        const code = encodeSoulCode(APP.soul);
+        if (DOM.modalCodeText) DOM.modalCodeText.value = code;
+        openModal(code);
+      });
+    }
+
+    if (DOM.modalCopyBtn) {
+      DOM.modalCopyBtn.addEventListener("click", async () => {
+        const code = DOM.modalCodeText ? String(DOM.modalCodeText.value || "") : "";
+        try {
+          await copyToClipboard(code);
+          setDiag(diagText("copied"));
+        } catch (_) {
+          setDiag(diagText("copy:fail"));
+        }
+      });
+    }
+
+    // カムバックする（未リボーンへ＝イジェクト的挙動）
+    if (DOM.modalRebornBtn) {
+      DOM.modalRebornBtn.addEventListener("click", () => {
+        closeModal();
+        // 未リボーンへ移動（コードは保持）
+        if (APP.soul) {
+          APP.soul.isReborn = false;
+          saveSoul(APP.soul);
+        }
+        showUnrebornScreen();
+      });
+    }
+
+    // 育成に戻る（ダイアログ閉じるだけ）
+    if (DOM.modalBackBtn) {
+      DOM.modalBackBtn.addEventListener("click", () => {
+        closeModal();
+      });
+    }
+
+    if (DOM.modalCloseBtn) {
+      DOM.modalCloseBtn.addEventListener("click", () => closeModal());
+    }
+  }
+
+  // ----------------------------
+  // Boot sequence with retry
+  // ----------------------------
+  function boot() {
+    bindDom();
+
+    // まず診断
+    setDiag(diagText("boot"));
+
+    // soul load
+    APP.soul = loadSoul();
+
+    // 画面切替
+    if (APP.soul && APP.soul.isReborn) {
+      showRebornScreen();
+    } else {
+      showUnrebornScreen();
+    }
+
+    // slider init（防御）
+    initSlidersSafely();
+
+    // events
+    wireEvents();
+
+    // 後からTSP_GAMEが差し替わる/完成するケースに備えて、数回だけ再初期化
+    let tries = 0;
+    const retry = setInterval(() => {
+      tries++;
+      initSlidersSafely();
+      setDiag(diagText("retry:" + tries));
+      if (tries >= 8) clearInterval(retry);
+    }, 250);
+
+    // sprite
+    if (APP.soul && APP.soul.isReborn) {
+      ensureSpriteImage();
+      setSpriteFace(1, "right");
+      startHomeAnim();
+      refreshHomeEnvLabel();
+    }
+  }
+
+  // Start
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", boot);
+  } else {
+    boot();
+  }
 })();
