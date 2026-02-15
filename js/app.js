@@ -1,21 +1,22 @@
 // FILE: js/app.js
 /* =========================================================
- * js/app.js  v0.78-FX4+ (hotfix)
+ * TalisPod v0.79-prep
+ * app.js（module不使用）
  *
- * 目的（今回）：
- * 1) ホームの表示が「属性名（トルネード等）」になっているのを修正
- *    => エリア名（成層圏/山岳地帯/…）を優先表示にする
- *    - 無属性：無属性
- *    - 水中：エリア名（北海深海など）
- *    - 陸上：エリア名（成層圏など）
- *    - 併記でランク（超ベスト/ベスト/良好/普通/最悪）を付ける
+ * 今回の修正（このファイル）：
+ * 1) ホームの環境表示：属性名ではなく「エリア名（info.areaName）」を優先表示
+ *    - 無属性は「無属性」のまま
+ *    - ランク表記も併記（例：成層圏（ベスト環境））
  *
- * 2) 既存仕様（歩行/表情/育成/モーダル等）はノータッチ方針
+ * 2) 最悪環境：暗い絵文字（🌑🕳️☠️など）を上からパラパラ降らせる
+ *    - css/app.css の .tsp-darkfall と @keyframes tspDarkFall を利用
+ *    - scene に直接 append（良好の♪と同じ思想）
+ *
+ * 3) 歩行スピード：左右移動速度だけ 2倍（アニメ切替速度は据え置き）
+ *    - WALK.speedPxPerSec を 2倍に
  *
  * 注意：
- * - IDは絶対に変更しない
- * - HTML/CSS構造も変えない
- * - FXが消え続ける問題の修正（前回分）は維持
+ * - ID/構造は絶対に変えない方針（既存HTML/CSS前提）
  * ========================================================= */
 
 (function () {
@@ -34,7 +35,7 @@
     return String(s ?? "").replace(/\s+/g, " ").trim();
   }
 
-  // ===== lightweight UI notice (no native dialogs) =====
+  // ===== lightweight UI notice =====
   let noticeModal = null;
   let toastEl = null;
   let toastTimer = null;
@@ -129,6 +130,7 @@
   const MONSTER = {
     id: "windragon",
     spritePath: "./assets/sprites/windragon.png",
+    // 超ベスト：-45 / 5（必要なら水深も）
     superBest: { temp: -45, hum: 5, waterDepth: 50 },
   };
 
@@ -144,7 +146,8 @@
 
   const WALK = {
     halfRangePx: 84,
-    speedPxPerSec: 12,
+    // ★修正：左右移動速度だけ 2倍（アニメ切替は stepTimer のまま）
+    speedPxPerSec: 24,
     facing: "right",
     x: 0,
     stepTimer: 0,
@@ -159,6 +162,7 @@
     superAcc: 0,
     bestAcc: 0,
     goodAcc: 0,
+    badAcc: 0,
   };
 
   // ===== DOM refs =====
@@ -205,9 +209,8 @@
   // ===== Skills event guard =====
   let skillsClickBound = false;
 
-  // ★FX state tracking
+  // ===== FX state tracking =====
   let lastRankKey = null;
-  let lastEnvAttr = null;
 
   function lockUI(on) {
     uiLocked = on;
@@ -262,16 +265,16 @@
     headerLine3.textContent = "リボーン中";
   }
 
-  function attrJp(attr) {
+  function attrJp(attrKey) {
     const meta = window.TSP_GAME && window.TSP_GAME.ATTR_META;
-    if (attr === "neutral") return "無属性";
-    return (meta && meta[attr] && meta[attr].jp) ? meta[attr].jp : String(attr || "");
+    if (!attrKey || attrKey === "neutral") return "無属性";
+    return (meta && meta[attrKey] && meta[attrKey].jp) ? meta[attrKey].jp : String(attrKey || "");
   }
 
-  function setHomeBackgroundByEnvAttr(envAttr) {
+  function setHomeBackgroundByEnvAttr(envAttrKey) {
     if (!scene) return;
     scene.classList.remove("attr-none", "attr-volcano", "attr-tornado", "attr-earthquake", "attr-storm");
-    switch (envAttr) {
+    switch (envAttrKey) {
       case "volcano": scene.classList.add("attr-volcano"); break;
       case "tornado": scene.classList.add("attr-tornado"); break;
       case "earthquake": scene.classList.add("attr-earthquake"); break;
@@ -404,10 +407,9 @@
     humidityValue.textContent = `${envDraft.hum}％`;
     updateLightLabelByHumidity();
 
-    // 予想環境：属性のみ（ワクワク維持）
-    // ※envAttributeはresolverにlight不要（陸上は無視）なので従来通り
-    const attr = window.TSP_GAME.envAttribute(envDraft.temp, envDraft.hum, envDraft.light);
-    envPreviewLabel.textContent = (attr === "neutral") ? "無属性" : attrJp(attr);
+    // 予想環境は「属性のみ」表示（探索前にエリア名を見せない）
+    const attrKey = window.TSP_GAME.envAttribute(envDraft.temp, envDraft.hum, envDraft.light);
+    envPreviewLabel.textContent = (attrKey === "neutral") ? "無属性" : attrJp(attrKey);
   }
 
   // ===== Adventure apply =====
@@ -446,8 +448,8 @@
     spriteViewport.style.transform = "scaleX(1)";
   }
 
+  // 現行スプライトは「右向き原画」想定：right のときだけ反転
   function setFacing(direction) {
-    // ※既存挙動維持（前回の修正に合わせたまま）
     spriteViewport.style.transform = (direction === "right") ? "scaleX(-1)" : "scaleX(1)";
   }
 
@@ -471,6 +473,7 @@
   function removeParticles() {
     if (!scene) return;
     qsa(".tsp-particle").forEach(p => p.remove());
+    qsa(".tsp-darkfall").forEach(p => p.remove());
   }
 
   function clearFxAllHard() {
@@ -483,6 +486,7 @@
     return min + Math.random() * (max - min);
   }
 
+  // 共通：♪✨（good/best/superbest）
   function spawnParticle({ text, xPct, yPct, cls, dur, dx, dy, rot, scale, sizePx }) {
     if (!scene) return;
 
@@ -501,6 +505,26 @@
     scene.appendChild(p);
 
     const rmMs = Math.max(900, dur * 1000 + 220);
+    setTimeout(() => { try { p.remove(); } catch {} }, rmMs);
+  }
+
+  // ★最悪：暗い絵文字パラパラ（CSS: .tsp-darkfall）
+  function spawnDarkFall({ text, xPct, dur, dx, dy, sizePx }) {
+    if (!scene) return;
+
+    const p = document.createElement("div");
+    p.className = "tsp-darkfall";
+    p.textContent = text;
+    p.style.left = `${xPct}%`;
+    p.style.top = `-8px`;
+    p.style.setProperty("--tspDur", `${dur}s`);
+    p.style.setProperty("--tspDX", `${dx}px`);
+    p.style.setProperty("--tspDY", `${dy}px`);
+    p.style.fontSize = `${sizePx}px`;
+
+    scene.appendChild(p);
+
+    const rmMs = Math.max(900, dur * 1000 + 260);
     setTimeout(() => { try { p.remove(); } catch {} }, rmMs);
   }
 
@@ -590,10 +614,27 @@
     }
   }
 
-  // 最悪：暗い雰囲気（CSSに任せる）
-  function applyBadFx() {
+  // 最悪：暗幕はCSS、追加で暗い絵文字を降らせる
+  function emitBad(dtSec) {
     if (!scene) return;
     scene.classList.add("fx-bad");
+
+    FX.badAcc += dtSec;
+    const interval = 0.28; // ほどよい頻度
+    while (FX.badAcc >= interval) {
+      FX.badAcc -= interval;
+
+      const pool = ["🌑", "🕳️", "☠️", "💀", "🖤"];
+      const text = pool[Math.floor(Math.random() * pool.length)];
+
+      const xPct = rand(6, 94);
+      const dur = rand(1.6, 2.6);
+      const dx = rand(-18, 18);
+      const dy = rand(200, 320);
+      const sizePx = rand(14, 20);
+
+      spawnDarkFall({ text, xPct, dur, dx, dy, sizePx });
+    }
   }
 
   function centerSprite() {
@@ -633,6 +674,7 @@
       WALK.stepTimer = 0;
     }
 
+    // ★アニメ切替速度は据え置き（0.5秒ごと）
     WALK.stepTimer += dtSec;
     if (WALK.stepTimer >= 0.5) {
       WALK.stepTimer -= 0.5;
@@ -652,31 +694,16 @@
   }
 
   function makeRankKey(info) {
-    return `${String(info.rank)}|${String(info.envAttr)}`;
+    return `${String(info.rank)}|${String(info.envAttr)}|${String(info.areaId)}`;
   }
 
-  function onRankChanged(newKey, info) {
+  function onRankChanged(newKey) {
     clearFxAllHard();
-
     FX.superAcc = 0;
     FX.bestAcc = 0;
     FX.goodAcc = 0;
-
+    FX.badAcc = 0;
     lastRankKey = newKey;
-    lastEnvAttr = info.envAttr;
-  }
-
-  // ★追加：ホーム表示用「エリア名優先」ラベル
-  function homeEnvLabel(info) {
-    const R = window.TSP_GAME.Rank;
-
-    if (!info || info.rank === R.neutral) return "無属性";
-
-    // エリア名が取れるなら最優先
-    const areaName = safeText(info.areaName);
-    const main = areaName ? areaName : attrJp(info.envAttr);
-
-    return `${main}（${rankLabel(info.rank)}）`;
   }
 
   function renderByCurrentEnv(dtSec) {
@@ -686,16 +713,18 @@
     const info = window.TSP_GAME.computeRank(MONSTER, envApplied, now, soul.attribute);
     const R = window.TSP_GAME.Rank;
 
-    // ★修正点：ホーム表示はエリア名優先
-    envAttributeLabel.textContent = homeEnvLabel(info);
+    // ★修正：ホーム表示は areaName 優先（無ければ属性）
+    if (info.rank === R.neutral) {
+      envAttributeLabel.textContent = "無属性";
+    } else {
+      const place = info.areaName ? String(info.areaName) : attrJp(info.envAttr);
+      envAttributeLabel.textContent = `${place}（${rankLabel(info.rank)}）`;
+    }
 
-    // 背景色は属性（従来通り）
     setHomeBackgroundByEnvAttr(info.envAttr);
 
     const key = makeRankKey(info);
-    if (key !== lastRankKey) {
-      onRankChanged(key, info);
-    }
+    if (key !== lastRankKey) onRankChanged(key);
 
     updateHomeNeutralButtonVisibility(info);
 
@@ -703,14 +732,14 @@
     switch (info.rank) {
       case R.superbest:
         setFacing("left");
-        renderFrame(7);
+        renderFrame(7); // 喜び
         emitSuperbest(dtSec);
         centerSprite();
         break;
 
       case R.best:
         setFacing("left");
-        renderFrame(7);
+        renderFrame(7); // 喜び
         emitBest(dtSec);
         centerSprite();
         break;
@@ -718,7 +747,7 @@
       case R.good:
         tickIdle(dtSec);
         setFacing("left");
-        renderFrame(IDLE.frame);
+        renderFrame(IDLE.frame); // 通常1/2
         emitGood(dtSec);
         centerSprite();
         break;
@@ -726,14 +755,14 @@
       case R.normal:
         tickIdle(dtSec);
         setFacing("left");
-        renderFrame(IDLE.frame);
+        renderFrame(IDLE.frame); // 通常1/2
         centerSprite();
         break;
 
       case R.bad:
         setFacing("left");
-        renderFrame(8);
-        applyBadFx();
+        renderFrame(8); // ダウン
+        emitBad(dtSec);
         centerSprite();
         break;
 
@@ -855,7 +884,7 @@
     openComebackModal(code);
   }
 
-  // ===== Confirm modal (ムゾクセイ？ only) =====
+  // ===== Confirm modal (ムゾクセイ？) =====
   function ensureConfirmModal() {
     if (confirmModal) return confirmModal;
 
@@ -937,7 +966,6 @@
     secondsAccum = 0;
 
     lastRankKey = null;
-    lastEnvAttr = null;
 
     updateGrowthPreviewAndTimer();
     renderByCurrentEnv(0);
@@ -969,9 +997,9 @@
     FX.superAcc = 0;
     FX.bestAcc = 0;
     FX.goodAcc = 0;
+    FX.badAcc = 0;
 
     lastRankKey = null;
-    lastEnvAttr = null;
 
     setHeader();
     refreshStatsUI();
@@ -1100,10 +1128,7 @@
     applyEnvBtn.addEventListener("click", async () => {
       try {
         await playAdventureAndApply();
-
-        lastRankKey = null;
-        lastEnvAttr = null;
-
+        lastRankKey = null; // 確定後は必ず切替扱い
       } catch (e) {
         lockUI(false);
         showError("applyEnvBtn", e);
@@ -1165,6 +1190,7 @@
       neutralBtn = must("neutralBtn");
       applyEnvBtn = must("applyEnvBtn");
 
+      // light buttons（indexのIDと一致している前提）
       lightBtn0 = must("lightBtn0");
       lightBtn50 = must("lightBtn50");
       lightBtn100 = must("lightBtn100");
@@ -1193,6 +1219,7 @@
       setLightDraft(50);
       refreshEnvUI();
 
+      // sprite viewport sizing
       spriteViewport.style.width = (SHEET.frameW * SHEET.scale) + "px";
       spriteViewport.style.height = (SHEET.frameH * SHEET.scale) + "px";
       spriteSheetLayer.style.width = (96 * SHEET.scale) + "px";
