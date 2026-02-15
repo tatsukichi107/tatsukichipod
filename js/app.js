@@ -1,22 +1,15 @@
 // FILE: js/app.js
 /* =========================================================
- * TalisPod v0.79-prep
- * app.js（module不使用）
+ * js/app.js  v0.78.1 (UI tweak)
  *
- * 今回の修正（このファイル）：
- * 1) ホームの環境表示：属性名ではなく「エリア名（info.areaName）」を優先表示
- *    - 無属性は「無属性」のまま
- *    - ランク表記も併記（例：成層圏（ベスト環境））
+ * 変更点（IDは変更しない）
+ * 1) ヘッダーの「種族名」と「ニックネーム」を2行に分ける
+ * 2) 「冒険中…」表示を 画面中央・最前面（モーダル風）にする
  *
- * 2) 最悪環境：暗い絵文字（🌑🕳️☠️など）を上からパラパラ降らせる
- *    - css/app.css の .tsp-darkfall と @keyframes tspDarkFall を利用
- *    - scene に直接 append（良好の♪と同じ思想）
- *
- * 3) 歩行スピード：左右移動速度だけ 2倍（アニメ切替速度は据え置き）
- *    - WALK.speedPxPerSec を 2倍に
- *
- * 注意：
- * - ID/構造は絶対に変えない方針（既存HTML/CSS前提）
+ * 依存：
+ * - window.TSP_STATE（state.js）
+ * - window.TSP_GAME（game.js）
+ * - window.TSP_AREAMAP / window.TSP_AREA（areaMap/areaResolver）
  * ========================================================= */
 
 (function () {
@@ -35,7 +28,7 @@
     return String(s ?? "").replace(/\s+/g, " ").trim();
   }
 
-  // ===== lightweight UI notice =====
+  // ===== lightweight UI notice (no native dialogs) =====
   let noticeModal = null;
   let toastEl = null;
   let toastTimer = null;
@@ -130,7 +123,6 @@
   const MONSTER = {
     id: "windragon",
     spritePath: "./assets/sprites/windragon.png",
-    // 超ベスト：-45 / 5（必要なら水深も）
     superBest: { temp: -45, hum: 5, waterDepth: 50 },
   };
 
@@ -146,8 +138,7 @@
 
   const WALK = {
     halfRangePx: 84,
-    // ★修正：左右移動速度だけ 2倍（アニメ切替は stepTimer のまま）
-    speedPxPerSec: 24,
+    speedPxPerSec: 12,
     facing: "right",
     x: 0,
     stepTimer: 0,
@@ -162,7 +153,6 @@
     superAcc: 0,
     bestAcc: 0,
     goodAcc: 0,
-    badAcc: 0,
   };
 
   // ===== DOM refs =====
@@ -209,8 +199,9 @@
   // ===== Skills event guard =====
   let skillsClickBound = false;
 
-  // ===== FX state tracking =====
-  let lastRankKey = null;
+  // ★FX state tracking
+  let lastRankKey = null;   // e.g. "neutral" / "superbest" etc.
+  let lastEnvAttr = null;   // "volcano" etc.
 
   function lockUI(on) {
     uiLocked = on;
@@ -249,6 +240,7 @@
     return n ? n : "未登録";
   }
 
+  // ★変更：種族名とニックネームを2行に分ける
   function setHeader() {
     if (!soul) {
       headerLine1.textContent = "";
@@ -256,25 +248,26 @@
       headerLine3.textContent = "未リボーン";
       return;
     }
+
     const saga = safeText(soul.sagaName);
     const sp = safeText(soul.speciesName);
     const nick = displayNickname(soul);
 
     headerLine1.textContent = `サーガ名：${saga}`;
-    headerLine2.textContent = `種族名：${sp} / ニックネーム：${nick}`;
-    headerLine3.textContent = "リボーン中";
+    headerLine2.textContent = `種族名：${sp}`;
+    headerLine3.textContent = `ニックネーム：${nick}`;
   }
 
-  function attrJp(attrKey) {
+  function attrJp(attr) {
     const meta = window.TSP_GAME && window.TSP_GAME.ATTR_META;
-    if (!attrKey || attrKey === "neutral") return "無属性";
-    return (meta && meta[attrKey] && meta[attrKey].jp) ? meta[attrKey].jp : String(attrKey || "");
+    if (attr === "neutral") return "無属性";
+    return (meta && meta[attr] && meta[attr].jp) ? meta[attr].jp : String(attr || "");
   }
 
-  function setHomeBackgroundByEnvAttr(envAttrKey) {
+  function setHomeBackgroundByEnvAttr(envAttr) {
     if (!scene) return;
     scene.classList.remove("attr-none", "attr-volcano", "attr-tornado", "attr-earthquake", "attr-storm");
-    switch (envAttrKey) {
+    switch (envAttr) {
       case "volcano": scene.classList.add("attr-volcano"); break;
       case "tornado": scene.classList.add("attr-tornado"); break;
       case "earthquake": scene.classList.add("attr-earthquake"); break;
@@ -407,9 +400,61 @@
     humidityValue.textContent = `${envDraft.hum}％`;
     updateLightLabelByHumidity();
 
-    // 予想環境は「属性のみ」表示（探索前にエリア名を見せない）
-    const attrKey = window.TSP_GAME.envAttribute(envDraft.temp, envDraft.hum, envDraft.light);
-    envPreviewLabel.textContent = (attrKey === "neutral") ? "無属性" : attrJp(attrKey);
+    // 予想環境は属性のみ（既存方針）
+    const attr = window.TSP_GAME.envAttribute(envDraft.temp, envDraft.hum, envDraft.light);
+    envPreviewLabel.textContent = (attr === "neutral") ? "無属性" : attrJp(attr);
+  }
+
+  // =========================================================
+  // 冒険中オーバーレイ（中央・最前面）
+  // =========================================================
+  let adventureOverlayEl = null;
+
+  function ensureAdventureOverlay() {
+    if (adventureOverlayEl) return adventureOverlayEl;
+
+    const wrap = document.createElement("div");
+    // CSSで .adventure-overlay を fixed 中央にする想定だが、
+    // CSSが未反映でも動くように最低限のinlineを入れる
+    wrap.className = "adventure-overlay";
+    wrap.setAttribute("aria-live", "polite");
+    wrap.style.position = "fixed";
+    wrap.style.inset = "0";
+    wrap.style.zIndex = "200";
+    wrap.style.display = "none";
+    wrap.style.alignItems = "center";
+    wrap.style.justifyContent = "center";
+    wrap.style.background = "rgba(0,0,0,0.55)";
+    wrap.style.backdropFilter = "blur(2px)";
+    wrap.style.padding = "16px";
+
+    const box = document.createElement("div");
+    box.className = "adventure-overlay__box";
+    box.textContent = "冒険中…";
+    box.style.padding = "14px 18px";
+    box.style.borderRadius = "16px";
+    box.style.border = "1px solid rgba(255,255,255,0.16)";
+    box.style.background = "rgba(15,18,28,0.92)";
+    box.style.boxShadow = "0 18px 36px rgba(0,0,0,0.40)";
+    box.style.fontSize = "14px";
+
+    wrap.appendChild(box);
+    document.body.appendChild(wrap);
+
+    adventureOverlayEl = wrap;
+    return adventureOverlayEl;
+  }
+
+  function showAdventureOverlay(text = "冒険中…") {
+    const ov = ensureAdventureOverlay();
+    const box = ov.querySelector(".adventure-overlay__box");
+    if (box) box.textContent = String(text ?? "冒険中…");
+    ov.style.display = "flex";
+  }
+
+  function hideAdventureOverlay() {
+    if (!adventureOverlayEl) return;
+    adventureOverlayEl.style.display = "none";
   }
 
   // ===== Adventure apply =====
@@ -418,15 +463,10 @@
 
     lockUI(true);
 
-    const tabEnv = tabEls.environment;
-    const overlay = document.createElement("div");
-    overlay.className = "adventure-overlay";
-    overlay.textContent = "冒険中…";
-    tabEnv.appendChild(overlay);
-
+    // ★変更：下に出すのではなく中央最前面に出す
+    showAdventureOverlay("冒険中…");
     await sleep(3000);
-
-    overlay.remove();
+    hideAdventureOverlay();
 
     envApplied = { ...envDraft };
     secondsAccum = 0;
@@ -448,7 +488,6 @@
     spriteViewport.style.transform = "scaleX(1)";
   }
 
-  // 現行スプライトは「右向き原画」想定：right のときだけ反転
   function setFacing(direction) {
     spriteViewport.style.transform = (direction === "right") ? "scaleX(-1)" : "scaleX(1)";
   }
@@ -473,7 +512,6 @@
   function removeParticles() {
     if (!scene) return;
     qsa(".tsp-particle").forEach(p => p.remove());
-    qsa(".tsp-darkfall").forEach(p => p.remove());
   }
 
   function clearFxAllHard() {
@@ -482,11 +520,22 @@
     removeParticles();
   }
 
+  // legacy note-only
+  function setNoteFxLegacy() {
+    spriteFxLayer.innerHTML = "";
+    const n = document.createElement("div");
+    n.className = "fx-note-only";
+    n.textContent = "♪";
+    n.style.left = "50%";
+    n.style.bottom = "-6px";
+    n.style.transform = "translateX(-50%)";
+    spriteFxLayer.appendChild(n);
+  }
+
   function rand(min, max) {
     return min + Math.random() * (max - min);
   }
 
-  // 共通：♪✨（good/best/superbest）
   function spawnParticle({ text, xPct, yPct, cls, dur, dx, dy, rot, scale, sizePx }) {
     if (!scene) return;
 
@@ -505,26 +554,6 @@
     scene.appendChild(p);
 
     const rmMs = Math.max(900, dur * 1000 + 220);
-    setTimeout(() => { try { p.remove(); } catch {} }, rmMs);
-  }
-
-  // ★最悪：暗い絵文字パラパラ（CSS: .tsp-darkfall）
-  function spawnDarkFall({ text, xPct, dur, dx, dy, sizePx }) {
-    if (!scene) return;
-
-    const p = document.createElement("div");
-    p.className = "tsp-darkfall";
-    p.textContent = text;
-    p.style.left = `${xPct}%`;
-    p.style.top = `-8px`;
-    p.style.setProperty("--tspDur", `${dur}s`);
-    p.style.setProperty("--tspDX", `${dx}px`);
-    p.style.setProperty("--tspDY", `${dy}px`);
-    p.style.fontSize = `${sizePx}px`;
-
-    scene.appendChild(p);
-
-    const rmMs = Math.max(900, dur * 1000 + 260);
     setTimeout(() => { try { p.remove(); } catch {} }, rmMs);
   }
 
@@ -614,27 +643,10 @@
     }
   }
 
-  // 最悪：暗幕はCSS、追加で暗い絵文字を降らせる
-  function emitBad(dtSec) {
+  // 最悪：暗い雰囲気（CSSに任せる）
+  function applyBadFx() {
     if (!scene) return;
     scene.classList.add("fx-bad");
-
-    FX.badAcc += dtSec;
-    const interval = 0.28; // ほどよい頻度
-    while (FX.badAcc >= interval) {
-      FX.badAcc -= interval;
-
-      const pool = ["🌑", "🕳️", "☠️", "💀", "🖤"];
-      const text = pool[Math.floor(Math.random() * pool.length)];
-
-      const xPct = rand(6, 94);
-      const dur = rand(1.6, 2.6);
-      const dx = rand(-18, 18);
-      const dy = rand(200, 320);
-      const sizePx = rand(14, 20);
-
-      spawnDarkFall({ text, xPct, dur, dx, dy, sizePx });
-    }
   }
 
   function centerSprite() {
@@ -674,7 +686,6 @@
       WALK.stepTimer = 0;
     }
 
-    // ★アニメ切替速度は据え置き（0.5秒ごと）
     WALK.stepTimer += dtSec;
     if (WALK.stepTimer >= 0.5) {
       WALK.stepTimer -= 0.5;
@@ -694,16 +705,16 @@
   }
 
   function makeRankKey(info) {
-    return `${String(info.rank)}|${String(info.envAttr)}|${String(info.areaId)}`;
+    return `${String(info.rank)}|${String(info.envAttr)}`;
   }
 
-  function onRankChanged(newKey) {
+  function onRankChanged(newKey, info) {
     clearFxAllHard();
     FX.superAcc = 0;
     FX.bestAcc = 0;
     FX.goodAcc = 0;
-    FX.badAcc = 0;
     lastRankKey = newKey;
+    lastEnvAttr = info.envAttr;
   }
 
   function renderByCurrentEnv(dtSec) {
@@ -713,18 +724,20 @@
     const info = window.TSP_GAME.computeRank(MONSTER, envApplied, now, soul.attribute);
     const R = window.TSP_GAME.Rank;
 
-    // ★修正：ホーム表示は areaName 優先（無ければ属性）
+    // ★ホームは「エリア名優先」＋（ランク）
     if (info.rank === R.neutral) {
       envAttributeLabel.textContent = "無属性";
     } else {
-      const place = info.areaName ? String(info.areaName) : attrJp(info.envAttr);
-      envAttributeLabel.textContent = `${place}（${rankLabel(info.rank)}）`;
+      const name = safeText(info.areaName) || attrJp(info.envAttr);
+      envAttributeLabel.textContent = `${name}（${rankLabel(info.rank)}）`;
     }
 
     setHomeBackgroundByEnvAttr(info.envAttr);
 
     const key = makeRankKey(info);
-    if (key !== lastRankKey) onRankChanged(key);
+    if (key !== lastRankKey) {
+      onRankChanged(key, info);
+    }
 
     updateHomeNeutralButtonVisibility(info);
 
@@ -762,7 +775,7 @@
       case R.bad:
         setFacing("left");
         renderFrame(8); // ダウン
-        emitBad(dtSec);
+        applyBadFx();
         centerSprite();
         break;
 
@@ -884,7 +897,7 @@
     openComebackModal(code);
   }
 
-  // ===== Confirm modal (ムゾクセイ？) =====
+  // ===== Confirm modal (ムゾクセイ？ only) =====
   function ensureConfirmModal() {
     if (confirmModal) return confirmModal;
 
@@ -966,6 +979,7 @@
     secondsAccum = 0;
 
     lastRankKey = null;
+    lastEnvAttr = null;
 
     updateGrowthPreviewAndTimer();
     renderByCurrentEnv(0);
@@ -997,9 +1011,9 @@
     FX.superAcc = 0;
     FX.bestAcc = 0;
     FX.goodAcc = 0;
-    FX.badAcc = 0;
 
     lastRankKey = null;
+    lastEnvAttr = null;
 
     setHeader();
     refreshStatsUI();
@@ -1128,9 +1142,11 @@
     applyEnvBtn.addEventListener("click", async () => {
       try {
         await playAdventureAndApply();
-        lastRankKey = null; // 確定後は必ず切替扱い
+        lastRankKey = null;
+        lastEnvAttr = null;
       } catch (e) {
         lockUI(false);
+        hideAdventureOverlay();
         showError("applyEnvBtn", e);
       }
     });
@@ -1190,7 +1206,6 @@
       neutralBtn = must("neutralBtn");
       applyEnvBtn = must("applyEnvBtn");
 
-      // light buttons（indexのIDと一致している前提）
       lightBtn0 = must("lightBtn0");
       lightBtn50 = must("lightBtn50");
       lightBtn100 = must("lightBtn100");
@@ -1219,7 +1234,6 @@
       setLightDraft(50);
       refreshEnvUI();
 
-      // sprite viewport sizing
       spriteViewport.style.width = (SHEET.frameW * SHEET.scale) + "px";
       spriteViewport.style.height = (SHEET.frameH * SHEET.scale) + "px";
       spriteSheetLayer.style.width = (96 * SHEET.scale) + "px";
