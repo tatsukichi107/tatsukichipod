@@ -1,21 +1,24 @@
+// FILE: js/areaMap.js
 /* =========================================================
    TalisPod v0.77+
    areaMap.js（module不使用）
    エリア定義データ（ID / 名称 / 属性 / 種別）
-   - file:// でも確実に動くように import/export を使わない
-   - window.TSP_AREAMAP として公開
+
+   ★重要：
+   - 属性値は app.js / state.js と合わせて小文字統一
+     volcano / tornado / earthquake / storm
    ========================================================= */
 (function () {
   "use strict";
 
   /* =======================================================
-     属性定義（英名は世界観の名称を優先）
+     属性定義（値は小文字で統一）
      ======================================================= */
   const ATTRIBUTES = {
-    VOLCANO: "VOLCANO",       // 火
-    TORNADO: "TORNADO",       // 風
-    EARTHQUAKE: "EARTHQUAKE", // 土
-    STORM: "STORM"            // 水
+    VOLCANO: "volcano",       // 火
+    TORNADO: "tornado",       // 風
+    EARTHQUAKE: "earthquake", // 土
+    STORM: "storm"            // 水
   };
 
   /* =======================================================
@@ -57,17 +60,10 @@
     SN_DEEP:    { id: "SN_DEEP",    name: "北海深海", attribute: ATTRIBUTES.STORM, type: "sea", side: "north", depth: 100 }
   };
 
-  function getAreaById(id) {
-    return AREAS[id] || null;
-  }
-  function getAreaName(id) {
-    return AREAS[id] ? AREAS[id].name : null;
-  }
-  function getAreaAttribute(id) {
-    return AREAS[id] ? AREAS[id].attribute : null;
-  }
+  function getAreaById(id) { return AREAS[id] || null; }
+  function getAreaName(id) { return AREAS[id] ? AREAS[id].name : null; }
+  function getAreaAttribute(id) { return AREAS[id] ? AREAS[id].attribute : null; }
 
-  // 公開
   window.TSP_AREAMAP = {
     ATTRIBUTES,
     AREAS,
