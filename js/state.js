@@ -1,18 +1,18 @@
+// FILE: js/state.js
 /* =========================================================
- * state.js  v0.76-stable
- * - ソウルドール（育成データ）を生成
- * - 記憶コード（短縮）を発行/読み込み
- * - サーガ名照合（違うサーガ名ならリボーン失敗）
- *
- * 前提：
- * - 現時点は windragon（ウインドラゴン）1体を安定運用
- * - 環境設定は保存しない（再リボーン時は無属性固定）
+ * state.js  v0.79-stable
+ * - ソウルドール生成
+ * - 記憶コード（SOUL1:）発行
+ * - 記憶コード読み込み（改行/空白/ゼロ幅/全角記号耐性あり）
+ * - サーガ名照合
  * ========================================================= */
 
 (function () {
   "use strict";
 
-  // ---------- UTF-8 / Base64URL helpers ----------
+  /* ===============================
+     UTF-8 / Base64URL helpers
+     =============================== */
   function utf8ToBytes(str) {
     return new TextEncoder().encode(str);
   }
@@ -34,7 +34,10 @@
     return bytes;
   }
   function b64UrlEncode(bytes) {
-    return b64Encode(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+    return b64Encode(bytes)
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/g, "");
   }
   function b64UrlDecode(b64url) {
     let b64 = b64url.replace(/-/g, "+").replace(/_/g, "/");
@@ -42,23 +45,21 @@
     return b64Decode(b64);
   }
 
-  // ---------- Constants ----------
+  /* ===============================
+     Constants
+     =============================== */
   const CODE_PREFIX = "SOUL1:";
   const SPECIES_ID = "windragon";
 
-  // 「レジェンズ」表記のこだわり：内部名は lengendz で統一（名前だけ）
-  // ※プロパティ名としては soul を使う（既存実装との整合優先）
   const DEFAULT_LENGENDZ = Object.freeze({
     speciesId: SPECIES_ID,
     speciesName: "ウインドラゴン",
-    attribute: "tornado", // 風＝トルネード
+    attribute: "tornado",
     baseHP: 400,
     baseStats: { fire: 60, wind: 100, earth: 60, water: 20 },
-    defaultMoves: Object.freeze([
-      "ワザ1", "ワザ2", "ワザ3", "ワザ4", "ワザ5",
-      "ワザ6", "ワザ7", "ワザ8", "ワザ9", "ワザ10",
-      "ワザ11", "ワザ12", "ワザ13", "ワザ14", "ワザ15"
-    ]),
+    defaultMoves: Object.freeze(
+      Array.from({ length: 15 }, (_, i) => `ワザ${i + 1}`)
+    ),
   });
 
   function clampInt(n, min, max) {
@@ -74,78 +75,72 @@
     return Object.assign({}, obj);
   }
 
+  /* ===============================
+     新規ソウル生成
+     =============================== */
   function makeNewSoulWindragon(sagaName) {
     const saga = String(sagaName || "").trim();
     if (!saga) throw new Error("サーガ名が空です");
 
-    const soul = {
+    return {
       version: 1,
-
-      // identity
       sagaName: saga,
+
       speciesId: DEFAULT_LENGENDZ.speciesId,
       speciesName: DEFAULT_LENGENDZ.speciesName,
-      attribute: DEFAULT_LENGENDZ.attribute, // tornado
+      attribute: DEFAULT_LENGENDZ.attribute,
       nickname: "",
 
-      // stats
       baseHP: DEFAULT_LENGENDZ.baseHP,
       baseStats: shallowCopy(DEFAULT_LENGENDZ.baseStats),
 
-      // grow
       growHP: 0,
       growStats: { fire: 0, wind: 0, earth: 0, water: 0 },
 
-      // current
       currentHP: DEFAULT_LENGENDZ.baseHP,
 
-      // inventory
       crystals: { volcano: 0, tornado: 0, earthquake: 0, storm: 0 },
 
-      // moves (15 fixed)
       moves: DEFAULT_LENGENDZ.defaultMoves.slice(),
 
-      // metadata (任意)
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
-
-    return soul;
   }
 
+  /* ===============================
+     保存用正規化
+     =============================== */
   function normalizeSoulForSave(soul) {
     if (!soul) throw new Error("ソウルがありません");
 
     const saga = String(soul.sagaName || "").trim();
     if (!saga) throw new Error("サーガ名が不正です");
 
-    const nickname = String(soul.nickname || "").trim();
-
     const growHP = clampInt(soul.growHP ?? 0, 0, 999999);
-    const growStats = soul.growStats || {};
-    const g = {
-      fire: clampInt(growStats.fire ?? 0, 0, 999999),
-      wind: clampInt(growStats.wind ?? 0, 0, 999999),
-      earth: clampInt(growStats.earth ?? 0, 0, 999999),
-      water: clampInt(growStats.water ?? 0, 0, 999999),
+
+    const gs = soul.growStats || {};
+    const growStats = {
+      fire: clampInt(gs.fire ?? 0, 0, 999999),
+      wind: clampInt(gs.wind ?? 0, 0, 999999),
+      earth: clampInt(gs.earth ?? 0, 0, 999999),
+      water: clampInt(gs.water ?? 0, 0, 999999),
     };
 
-    const crystals = soul.crystals || {};
-    const c = {
-      volcano: clampInt(crystals.volcano ?? 0, 0, 999999),
-      tornado: clampInt(crystals.tornado ?? 0, 0, 999999),
-      earthquake: clampInt(crystals.earthquake ?? 0, 0, 999999),
-      storm: clampInt(crystals.storm ?? 0, 0, 999999),
+    const cr = soul.crystals || {};
+    const crystals = {
+      volcano: clampInt(cr.volcano ?? 0, 0, 999999),
+      tornado: clampInt(cr.tornado ?? 0, 0, 999999),
+      earthquake: clampInt(cr.earthquake ?? 0, 0, 999999),
+      storm: clampInt(cr.storm ?? 0, 0, 999999),
     };
 
-    const moves = Array.isArray(soul.moves) ? soul.moves.slice(0, 15) : [];
+    const moves = Array.isArray(soul.moves)
+      ? soul.moves.slice(0, 15)
+      : DEFAULT_LENGENDZ.defaultMoves.slice();
+
     while (moves.length < 15) moves.push(`ワザ${moves.length + 1}`);
-    const m = moves.map((x, i) => {
-      const s = String(x ?? "").trim();
-      return s ? s : `ワザ${i + 1}`;
-    });
 
-    // 最大HPは game.js 側で計算するが、currentHP の NaN防止だけここで整える
     const baseHP = DEFAULT_LENGENDZ.baseHP;
     const maxHP = baseHP + growHP;
     const currentHP = clampInt(soul.currentHP ?? maxHP, 0, maxHP);
@@ -154,26 +149,28 @@
       v: 1,
       sp: SPECIES_ID,
       s: saga,
-      nn: nickname,
+      nn: String(soul.nickname || "").trim(),
       chp: currentHP,
       ghp: growHP,
-      gs: g,
-      cr: c,
-      mv: m,
+      gs: growStats,
+      cr: crystals,
+      mv: moves,
     };
   }
 
+  /* ===============================
+     読み込み
+     =============================== */
   function inflateSoulFromPayload(p) {
     if (!p || typeof p !== "object") throw new Error("記憶データが壊れています");
-
     if (p.v !== 1) throw new Error("記憶データのバージョンが不正です");
-    if (p.sp !== SPECIES_ID) throw new Error("このソウルドールは未対応の種族です");
+    if (p.sp !== SPECIES_ID) throw new Error("未対応の種族です");
 
     const soul = makeNewSoulWindragon(p.s);
 
     soul.nickname = String(p.nn || "").trim();
-
     soul.growHP = clampInt(p.ghp ?? 0, 0, 999999);
+
     const gs = p.gs || {};
     soul.growStats = {
       fire: clampInt(gs.fire ?? 0, 0, 999999),
@@ -190,23 +187,18 @@
       storm: clampInt(cr.storm ?? 0, 0, 999999),
     };
 
-    // moves
-    const mv = Array.isArray(p.mv) ? p.mv.slice(0, 15) : DEFAULT_LENGENDZ.defaultMoves.slice();
-    while (mv.length < 15) mv.push(`ワザ${mv.length + 1}`);
-    soul.moves = mv.map((x, i) => {
-      const s = String(x ?? "").trim();
-      return s ? s : `ワザ${i + 1}`;
-    });
+    soul.moves = Array.isArray(p.mv) ? p.mv.slice(0, 15) : soul.moves;
 
-    // currentHP（最大HP増加時は game.js 側で currentHP 同時増加のルールを扱う）
-    const baseHP = soul.baseHP;
-    const maxHP = baseHP + soul.growHP;
+    const maxHP = soul.baseHP + soul.growHP;
     soul.currentHP = clampInt(p.chp ?? maxHP, 0, maxHP);
 
     soul.updatedAt = Date.now();
     return soul;
   }
 
+  /* ===============================
+     記憶コード生成
+     =============================== */
   function makeSoulCode(soul) {
     const payload = normalizeSoulForSave(soul);
     const json = JSON.stringify(payload);
@@ -215,11 +207,27 @@
     return CODE_PREFIX + b64u;
   }
 
+  /* ===============================
+     記憶コード解析（耐性強化版）
+     =============================== */
   function parseSoulCode(code) {
-    const raw = String(code || "").trim();
+    let raw = String(code || "").trim();
     if (!raw) throw new Error("記憶が空です");
 
-    const body = raw.startsWith(CODE_PREFIX) ? raw.slice(CODE_PREFIX.length) : raw;
+    const prefixes = ["SOUL1:", "SOUL:"];
+    for (const p of prefixes) {
+      if (raw.startsWith(p)) {
+        raw = raw.slice(p.length);
+        break;
+      }
+    }
+
+    // 改行/空白/ゼロ幅文字除去
+    let body = raw
+      .replace(/[\s\u200B-\u200D\uFEFF]/g, "")
+      .replace(/＿/g, "_")
+      .replace(/[－−‐-–—ー]/g, "-");
+
     let payload;
     try {
       const bytes = b64UrlDecode(body);
@@ -232,19 +240,24 @@
     return inflateSoulFromPayload(payload);
   }
 
+  /* ===============================
+     サーガ照合
+     =============================== */
   function assertSagaMatch(parsedSoul, sagaInput) {
     const inSaga = String(sagaInput || "").trim();
     if (!inSaga) throw new Error("サーガ名が空です");
     const savedSaga = String(parsedSoul?.sagaName || "").trim();
-    if (!savedSaga) throw new Error("記憶データのサーガ名が不正です");
     if (savedSaga !== inSaga) throw new Error("サーガ名が一致しません（リボーン失敗）");
   }
 
-  // expose
+  /* ===============================
+     公開
+     =============================== */
   window.TSP_STATE = {
     newSoulWindragon: makeNewSoulWindragon,
     makeSoulCode,
     parseSoulCode,
     assertSagaMatch,
   };
+
 })();
