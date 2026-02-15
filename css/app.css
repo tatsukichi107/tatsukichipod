@@ -1,9 +1,11 @@
 /* FILE: css/app.css */
 /* =========================================================
-   TalisPod v0.78 UI微調整
-   - カムバック位置は index 側で調整済
-   - タブ絵文字表示対応（.icoサイズ強化）
-   - 最悪環境に「暗い絵文字パラパラ」用アニメ追加
+   TalisPod v0.77〜v0.78（完全版 app.css）
+   方針：
+   - 既存のフルCSSを維持（container / start-card / buttons / sprite / scene / tabs / modal / FX / particles など）
+   - v0.78微調整を「追記」で統合
+     1) タブ絵文字（.ico）見やすさ
+     2) 最悪環境用「暗い絵文字パラパラ」クラス（.tsp-darkfall）
    ========================================================= */
 
 :root{
@@ -13,6 +15,10 @@
   --text: rgba(255,255,255,0.92);
   --muted: rgba(255,255,255,0.65);
   --line: rgba(255,255,255,0.12);
+
+  --btn: rgba(255,255,255,0.10);
+  --btn2: rgba(255,255,255,0.16);
+  --btn3: rgba(255,255,255,0.22);
 
   --safeTop: env(safe-area-inset-top, 0px);
   --safeBottom: env(safe-area-inset-bottom, 0px);
@@ -30,7 +36,23 @@ body{
               var(--bg);
 }
 
-/* ===== Header ===== */
+button, input, textarea{
+  font: inherit;
+  color: inherit;
+}
+
+.container{
+  width: min(860px, 94vw);
+  margin: 0 auto;
+  padding: 12px 0 calc(88px + var(--safeBottom));
+}
+
+.view{ display:none; }
+.view.active{ display:block; }
+
+/* =========================================================
+   Header
+   ========================================================= */
 .header{
   position: sticky;
   top: 0;
@@ -45,6 +67,21 @@ body{
   margin: 0 auto;
   padding: 10px 0 8px;
 }
+
+/* 旧構造互換：header-inner--with-action がある場合 */
+.header-inner--with-action{
+  display:flex;
+  align-items:flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.header-left{ min-width: 0; }
+.header-right{
+  display:flex;
+  align-items:flex-start;
+  justify-content:flex-end;
+}
+
 .header-title{
   font-weight: 800;
   letter-spacing: 0.02em;
@@ -55,39 +92,509 @@ body{
   color: var(--muted);
   line-height: 1.3;
 }
+
+/* comeback button */
 #comebackBtn{
-  padding: 8px 12px;
+  padding: 10px 12px;
   border-radius: 14px;
   border: 1px solid var(--line);
   background: rgba(255,255,255,0.12);
   cursor:pointer;
-  white-space:nowrap;
+  white-space: nowrap;
 }
 #comebackBtn:hover{
   background: rgba(255,255,255,0.18);
 }
 
-/* ===== Scene ===== */
-.scene{
-  position: relative;
-  overflow: hidden;
+/* =========================================================
+   cards / panels
+   ========================================================= */
+.panel, .start-card{
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 16px;
   padding: 14px;
+  box-shadow: 0 10px 28px rgba(0,0,0,0.28);
 }
 
-/* ===== Tabs ===== */
-.tabs{
-  position: fixed;
-  left:0;
-  right:0;
-  bottom:0;
-  z-index:50;
+.start-card h2{
+  font-size: 15px;
+  margin: 10px 0 10px;
+}
+
+.field label{
+  display:block;
+  font-size: 12px;
+  color: var(--muted);
+  margin: 4px 0 6px;
+}
+.field input, .field textarea{
+  width:100%;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(0,0,0,0.28);
+  padding: 10px 12px;
+  outline: none;
+  /* iPhone入力ズーム抑制（最低16px目安） */
+  font-size: 16px;
+}
+.field textarea{
+  min-height: 88px;
+  resize: vertical;
+}
+
+.start-actions{
+  display:flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+/* =========================================================
+   buttons
+   ========================================================= */
+button{
+  border: 1px solid var(--line);
+  background: var(--btn);
+  padding: 10px 12px;
+  border-radius: 14px;
+  cursor:pointer;
+}
+button:hover{ background: var(--btn2); }
+button:active{ transform: translateY(1px); }
+button:disabled{
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+button.ghost{
+  background: transparent;
+  border-color: var(--line);
+}
+button.ghost:hover{
+  background: rgba(255,255,255,0.06);
+}
+
+/* =========================================================
+   HOME / Scene
+   ========================================================= */
+.scene{
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 14px;
+  box-shadow: 0 10px 28px rgba(0,0,0,0.28);
+
+  position: relative;
+  overflow: hidden;
+}
+
+/* scene の中身を擬似要素より前面に */
+.scene > *{
+  position: relative;
+  z-index: 1;
+}
+
+/* ランク別背景演出：共通土台 */
+.scene::before,
+.scene::after{
+  content:"";
+  position:absolute;
+  inset:-2px;
+  pointer-events:none;
+  z-index: 0;
+  opacity: 0;
+}
+
+/* 超ベスト：派手なオーラ＋チカチカ */
+.scene.fx-superbest::before{
+  opacity: 1;
+  background:
+    radial-gradient(600px 260px at 50% 10%, rgba(255,255,255,0.26), transparent 60%),
+    radial-gradient(420px 240px at 10% 30%, rgba(255,220,120,0.18), transparent 62%),
+    radial-gradient(420px 240px at 90% 40%, rgba(160,220,255,0.18), transparent 62%),
+    radial-gradient(520px 280px at 50% 92%, rgba(255,140,200,0.14), transparent 65%);
+  animation: tspSuperPulse 0.85s ease-in-out infinite;
+}
+.scene.fx-superbest::after{
+  opacity: 1;
+  background:
+    repeating-linear-gradient(135deg,
+      rgba(255,255,255,0.08) 0px,
+      rgba(255,255,255,0.08) 6px,
+      transparent 6px,
+      transparent 18px);
+  mix-blend-mode: screen;
+  animation: tspSuperShine 1.1s linear infinite;
+}
+
+/* ベスト：ピカピカ控えめ＋降り注ぎを引き立てる */
+.scene.fx-best::before{
+  opacity: 1;
+  background:
+    radial-gradient(520px 240px at 50% 18%, rgba(255,255,255,0.18), transparent 62%),
+    radial-gradient(420px 220px at 18% 55%, rgba(255,255,255,0.10), transparent 70%),
+    radial-gradient(420px 220px at 82% 55%, rgba(255,255,255,0.10), transparent 70%);
+  animation: tspBestPulse 1.25s ease-in-out infinite;
+}
+.scene.fx-best::after{
+  opacity: 0.55;
+  background:
+    radial-gradient(180px 120px at 20% 15%, rgba(255,255,255,0.10), transparent 70%),
+    radial-gradient(180px 120px at 80% 25%, rgba(255,255,255,0.10), transparent 70%),
+    radial-gradient(220px 140px at 60% 85%, rgba(255,255,255,0.08), transparent 72%);
+  animation: tspBestSpark 1.6s ease-in-out infinite;
+}
+
+/* 良好：ほんのり明るい */
+.scene.fx-good::before{
+  opacity: 1;
+  background:
+    radial-gradient(520px 260px at 50% 25%, rgba(255,255,255,0.10), transparent 70%);
+  animation: tspGoodBreath 2.2s ease-in-out infinite;
+}
+
+/* 最悪：暗幕＋ビネット＋ズーン脈動 */
+.scene.fx-bad::before{
+  opacity: 1;
+  background:
+    radial-gradient(520px 320px at 50% 40%, rgba(0,0,0,0.28), rgba(0,0,0,0.66));
+  animation: tspDoomPulse 2.8s ease-in-out infinite;
+}
+.scene.fx-bad::after{
+  opacity: 1;
+  background:
+    radial-gradient(520px 320px at 50% 40%, transparent 35%, rgba(0,0,0,0.42) 75%);
+  mix-blend-mode: multiply;
+}
+
+/* 追加で雰囲気を落とす（※v0.78で少し強め） */
+.scene.fx-bad{
+  filter: saturate(0.68) brightness(0.75);
+}
+
+/* home top */
+.home-top{
+  display:flex;
+  align-items:flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.home-top .kv > div{
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.home-top .kv strong{
+  color: var(--text);
+}
+
+/* sprite wrapper */
+#spriteMover{
+  margin: 14px auto 10px;
+  width: fit-content;
+  will-change: transform;
+}
+#spriteViewport{
+  position: relative;
+  overflow: hidden;
+  border-radius: 0px; /* 長方形 */
+  background: rgba(0,0,0,0.10);
+  border: 1px solid rgba(255,255,255,0.10);
+}
+#spriteSheetLayer{
+  position:absolute;
+  left:0; top:0;
+}
+#spriteFxLayer{
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+}
+
+/* home bottom actions（scene外） */
+.home-bottom-actions{
+  margin-top: 10px;
   display:flex;
   justify-content:center;
-  gap:8px;
-  padding:10px 10px calc(10px + var(--safeBottom));
+}
+#homeNeutralBtn{
+  width: 100%;
+  max-width: 320px;
+}
+
+/* attribute backgrounds */
+.scene.attr-none{ background: rgba(255,255,255,0.06); }
+.scene.attr-volcano{ background: rgba(255, 80, 80, 0.20); }
+.scene.attr-tornado{ background: rgba(245, 245, 245, 0.16); }
+.scene.attr-earthquake{ background: rgba(90, 255, 140, 0.18); }
+.scene.attr-storm{ background: rgba(80, 170, 255, 0.22); }
+
+/* =========================================================
+   パーティクル（♪✨） 共通
+   ========================================================= */
+.tsp-particle{
+  position:absolute;
+  pointer-events:none;
+  user-select:none;
+  z-index: 2; /* scene内の上に */
+  opacity: 0.95;
+  will-change: transform, opacity;
+  text-shadow: 0 6px 18px rgba(0,0,0,0.35);
+}
+
+/* 超ベスト：舞う/飛ぶ */
+.tsp-fly{
+  animation: tspFly var(--tspDur, 1.6s) ease-out forwards;
+}
+@keyframes tspFly{
+  0%{ transform: translate3d(0,0,0) scale(var(--tspS,1)); opacity: 0; }
+  10%{ opacity: 1; }
+  100%{
+    transform: translate3d(var(--tspDX, 20px), var(--tspDY, -30px), 0) rotate(var(--tspR, 18deg)) scale(var(--tspS,1));
+    opacity: 0;
+  }
+}
+
+/* ベスト/良好：降る */
+.tsp-fall{
+  animation: tspFall var(--tspDur, 1.8s) linear forwards;
+}
+@keyframes tspFall{
+  0%{ transform: translate3d(0,-10px,0) scale(var(--tspS,1)); opacity: 0; }
+  10%{ opacity: 1; }
+  100%{ transform: translate3d(var(--tspDX, 0px), var(--tspDY, 180px), 0) scale(var(--tspS,1)); opacity: 0; }
+}
+
+/* 良好：パラパラ用の軽い揺れ */
+.tsp-drift{
+  animation: tspDrift var(--tspDur, 2.0s) ease-in-out forwards;
+}
+@keyframes tspDrift{
+  0%{ transform: translate3d(0,-8px,0) rotate(-6deg) scale(var(--tspS,1)); opacity: 0; }
+  12%{ opacity: 0.9; }
+  60%{ transform: translate3d(8px, 90px, 0) rotate(6deg) scale(var(--tspS,1)); opacity: 0.85; }
+  100%{ transform: translate3d(-6px, 160px, 0) rotate(12deg) scale(var(--tspS,1)); opacity: 0; }
+}
+
+/* 既存の note-only は残す（互換） */
+.fx-note-only{
+  position:absolute;
+  font-size: 18px;
+  opacity: 0.95;
+  animation: noteFloat 1.2s ease-in-out infinite;
+}
+@keyframes noteFloat{
+  0%{ transform: translateX(-50%) translateY(0); opacity: 0.8; }
+  50%{ transform: translateX(-50%) translateY(-8px); opacity: 1; }
+  100%{ transform: translateX(-50%) translateY(0); opacity: 0.8; }
+}
+
+/* =========================================================
+   v0.78 追加：最悪環境用「暗い絵文字パラパラ」
+   - app.js からこのクラスの要素を scene に append する想定
+   ========================================================= */
+.tsp-darkfall{
+  position:absolute;
+  pointer-events:none;
+  user-select:none;
+  z-index: 2;
+  animation: tspDarkFall var(--tspDur,2s) linear forwards;
+  opacity:0.9;
+  filter: brightness(0.55) saturate(0.65);
+  text-shadow: 0 10px 22px rgba(0,0,0,0.55);
+}
+@keyframes tspDarkFall{
+  0%{
+    transform: translate3d(0,-10px,0) rotate(0deg) scale(var(--tspS,1));
+    opacity:0;
+  }
+  10%{ opacity:0.9; }
+  100%{
+    transform: translate3d(var(--tspDX,0px), var(--tspDY,240px), 0) rotate(12deg) scale(var(--tspS,1));
+    opacity:0;
+  }
+}
+
+/* =========================================================
+   ENVIRONMENT
+   ========================================================= */
+.env-grid{
+  display:flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.env-top-actions{
+  display:flex;
+  justify-content:center;
+}
+.env-row{
+  display:flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.env-row .label{
+  display:flex;
+  justify-content: space-between;
+  align-items: baseline;
+  color: var(--muted);
+}
+.env-row .label strong{
+  color: var(--text);
+}
+.range-wrap{
+  display:flex;
+  justify-content:center;
+}
+.range-wrap input[type="range"]{
+  width: min(520px, 92%);
+  accent-color: rgba(255,255,255,0.75);
+  height: 32px;
+}
+
+/* light buttons */
+.light-buttons{
+  display:flex;
+  justify-content:center;
+  gap: 10px;
+}
+.light-btn{
+  min-width: 84px;
+  text-align:center;
+  padding: 10px 12px;
+  background: rgba(255,255,255,0.10);
+}
+.light-btn.active{
+  background: rgba(255,255,255,0.26);
+  border-color: rgba(255,255,255,0.30);
+}
+
+.env-preview{
+  font-size: 13px;
+  color: var(--muted);
+  text-align:center;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px dashed rgba(255,255,255,0.14);
+}
+
+.env-actions .row{
+  display:flex;
+  justify-content:center;
+}
+.env-actions button{
+  width: min(420px, 92%);
+}
+
+.adventure-overlay{
+  margin-top: 10px;
+  padding: 14px;
+  text-align:center;
+  border-radius: 14px;
+  background: rgba(0,0,0,0.40);
+  border: 1px solid rgba(255,255,255,0.12);
+}
+
+/* =========================================================
+   LEGENDZ
+   ========================================================= */
+.legendz-head{
+  display:flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.kvline{
+  display:flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--muted);
+}
+.kvline strong{
+  color: var(--text);
+}
+.kvline .sep{
+  opacity: 0.5;
+}
+.nick-edit{
+  display:flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.nick-edit input{
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(0,0,0,0.28);
+  padding: 10px 12px;
+  outline: none;
+  font-size: 16px; /* iPhoneズーム抑制 */
+}
+.nick-edit button{
+  width: 100%;
+}
+.legendz-grid{
+  display:grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+/* skills */
+.skills h3{
+  font-size: 14px;
+  color: var(--muted);
+}
+.skill-slots{
+  display:grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+.skill-slot{
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(0,0,0,0.18);
+}
+.skill-slot .name{
+  font-size: 13px;
+  color: var(--text);
+}
+.skill-slot .meta{
+  font-size: 12px;
+  color: var(--muted);
+}
+.skill-slot button{
+  padding: 8px 10px;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+
+/* =========================================================
+   CRYSTAL
+   ========================================================= */
+.crystal-box{
+  display:flex;
+  flex-direction: column;
+  gap: 10px;
+  color: var(--muted);
+}
+
+/* =========================================================
+   TABS
+   ========================================================= */
+.tabs{
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  display:flex;
+  justify-content:center;
+  gap: 8px;
+  padding: 10px 10px calc(10px + var(--safeBottom));
   background: rgba(10,12,18,0.72);
   backdrop-filter: blur(10px);
   border-top: 1px solid var(--line);
@@ -98,62 +605,119 @@ body{
   flex-direction: column;
   align-items:center;
   justify-content:center;
-  gap:4px;
-  padding:10px 6px;
-  border-radius:16px;
+  gap: 4px;
+  padding: 10px 6px;
+  border-radius: 16px;
   background: rgba(255,255,255,0.08);
-  border:1px solid rgba(255,255,255,0.12);
+  border: 1px solid rgba(255,255,255,0.12);
 }
 .tab-btn .ico{
-  font-size: 18px;   /* ★絵文字が見やすいように */
+  font-size: 18px;   /* ★v0.78：絵文字が見やすい */
   line-height: 1;
 }
 .tab-btn .dot{
-  width:6px;
-  height:6px;
-  border-radius:999px;
-  opacity:0;
+  width: 6px; height: 6px;
+  border-radius: 999px;
+  opacity: 0.0;
   background: rgba(255,255,255,0.85);
 }
 .tab-btn.active{
   background: rgba(255,255,255,0.16);
+  border-color: rgba(255,255,255,0.18);
 }
-.tab-btn.active .dot{
-  opacity:1;
+.tab-btn.active .dot{ opacity: 1.0; }
+
+.tab-content{ display:none; }
+.tab-content.active{ display:block; }
+
+/* =========================================================
+   MODAL
+   ========================================================= */
+.modal-backdrop{
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(0,0,0,0.55);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.modal-backdrop.active{ display:flex; }
+.modal{
+  width: min(560px, 96vw);
+  background: rgba(15,18,28,0.92);
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 18px;
+  padding: 14px;
+}
+.modal-title{
+  font-weight: 800;
+  margin-bottom: 10px;
+}
+.modal-code{
+  width:100%;
+  min-height: 110px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(0,0,0,0.35);
+  padding: 10px 12px;
+  outline: none;
+  font-size: 14px;
+}
+.modal-actions{
+  display:flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
 }
 
-/* ===== 最悪環境 追加パラパラ演出 ===== */
-.tsp-darkfall{
-  position:absolute;
-  pointer-events:none;
-  user-select:none;
-  z-index:2;
-  animation: tspDarkFall var(--tspDur,2s) linear forwards;
-  opacity:0.9;
-  filter: brightness(0.6) saturate(0.7);
-}
-
-@keyframes tspDarkFall{
-  0%{
-    transform: translate3d(0,-10px,0) rotate(0deg);
-    opacity:0;
-  }
-  10%{ opacity:0.9; }
-  100%{
-    transform: translate3d(var(--tspDX,0px), var(--tspDY,220px), 0) rotate(12deg);
-    opacity:0;
-  }
-}
-
-/* ===== 既存bad暗化効果 ===== */
-.scene.fx-bad{
-  filter: brightness(0.75) saturate(0.7);
-}
-
-/* ===== 未リボーン制御 ===== */
+/* =========================================================
+   未リボーン時の非表示制御（body.unreborn）
+   ========================================================= */
 body.unreborn .tabs{
-  display:none !important;
+  display: none !important;
 }
 body.unreborn #comebackBtn{
-  display:none !important;
+  display: none !important;
+}
+
+/* =========================================================
+   Animations (bg)
+   ========================================================= */
+@keyframes tspSuperPulse{
+  0%{ filter: brightness(1.00) saturate(1.00); }
+  50%{ filter: brightness(1.14) saturate(1.10); }
+  100%{ filter: brightness(1.00) saturate(1.00); }
+}
+@keyframes tspSuperShine{
+  0%{ transform: translateX(-18px) translateY(-12px); opacity: 0.55; }
+  50%{ opacity: 0.75; }
+  100%{ transform: translateX(18px) translateY(12px); opacity: 0.55; }
+}
+@keyframes tspBestPulse{
+  0%{ filter: brightness(1.00); }
+  50%{ filter: brightness(1.08); }
+  100%{ filter: brightness(1.00); }
+}
+@keyframes tspBestSpark{
+  0%{ opacity: 0.40; }
+  50%{ opacity: 0.72; }
+  100%{ opacity: 0.40; }
+}
+@keyframes tspGoodBreath{
+  0%{ opacity: 0.72; }
+  50%{ opacity: 1.00; }
+  100%{ opacity: 0.72; }
+}
+@keyframes tspDoomPulse{
+  0%{ opacity: 0.92; }
+  50%{ opacity: 1.00; }
+  100%{ opacity: 0.92; }
+}
+
+/* small screens tweaks */
+@media (min-width: 700px){
+  .legendz-grid{ grid-template-columns: 1fr 1fr; }
+  .skill-slots{ grid-template-columns: 1fr 1fr; }
 }
