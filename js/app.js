@@ -1,13 +1,11 @@
 /* =========================================================
-   TalisPod app.js（DOM一致版）
-   - startView / mainView の表示切替
-   - nav.tabs を未リボーン時に非表示
-   - タブ：.tab-btn[data-tab] → #tab-{key} を active 切替
-   - スライダー：TSP_GAME.TEMP_STEPS/HUM_STEPS を優先、無ければfallback
-   - リボーン：新規 / 記憶から
-   - 環境：下書き(draft)→決定(apply)（3.2秒後に反映＆ホームへ）
-   - 無属性：環境タブは即戻す / ホームは確認ダイアログ「ムゾクセイ？」
-   - スプライト：24x32切り抜き、表情番号の座標固定、移動方向で反転
+   talispod / js/app.js
+   修正ポイント（最小差分）:
+   - Start View のID/ボタンIDを現行HTMLに完全一致させる
+     sagaInput / soulTextInput / textRebornBtn / newSoulBtn
+   - 未リボーン時: tabs と comebackBtn を非表示
+   - リボーン後: tabs と comebackBtn を表示
+   - 既存UI/演出ロジックは極力ノータッチ
    ========================================================= */
 (function () {
   "use strict";
@@ -26,14 +24,15 @@
     startView: null,
     mainView: null,
     tabs: null,
+    comebackBtn: null,
 
-    // start (unreborn)
-    sagaNameInput: null,
-    memoryCodeInput: null,
-    btnFindNewSoul: null,
-    btnRebornFromMemory: null,
+    // start (unreborn) - ★現行HTMLに合わせる
+    sagaInput: null,
+    soulTextInput: null,
+    textRebornBtn: null,
+    newSoulBtn: null,
 
-    // tabs buttons
+    // tab buttons & panels
     tabBtns: [],
     tabPanels: [],
 
@@ -47,13 +46,13 @@
     lightBtns: [],
     envPreviewLabel: null,
     applyEnvBtn: null,
-    neutralBtn: null, // env tab: 無属性に戻す（即）
+    neutralBtn: null,
 
     // home
     envAttributeLabel: null,
     growthTimer: null,
     growthPreview: null,
-    homeNeutralBtn: null, // home: 無属性環境にする（確認）
+    homeNeutralBtn: null,
 
     // legendz
     speciesName: null,
@@ -78,11 +77,13 @@
     DOM.startView = id("startView");
     DOM.mainView = id("mainView");
     DOM.tabs = $("nav.tabs");
+    DOM.comebackBtn = id("comebackBtn");
 
-    DOM.sagaNameInput = id("sagaNameInput");
-    DOM.memoryCodeInput = id("memoryCodeInput");
-    DOM.btnFindNewSoul = id("btnFindNewSoul");
-    DOM.btnRebornFromMemory = id("btnRebornFromMemory");
+    // ★現行HTML
+    DOM.sagaInput = id("sagaInput");
+    DOM.soulTextInput = id("soulTextInput");
+    DOM.textRebornBtn = id("textRebornBtn");
+    DOM.newSoulBtn = id("newSoulBtn");
 
     DOM.tabBtns = $$(".tab-btn[data-tab]");
     DOM.tabPanels = $$(".tab-content[id^='tab-']");
@@ -181,7 +182,7 @@
   function makeDefaultSoul() {
     return {
       sagaName: "",
-      nickname: "",                 // 新規は未登録
+      nickname: "",
       isReborn: false,
 
       legendzId: "windragon",
@@ -192,10 +193,8 @@
       grow:      { hp: 0,   magic: 0,  counter: 0,   strike: 0,  heal: 0  },
       currentHp: 400,
 
-      // 超ベスト（暫定：-45/5、光は陸上では無視扱いでもOK）
       superBest: { temp: -45, hum: 5, light: 0 },
 
-      // 仮スロット（名前だけ保存）
       wazaSlots: Array.from({ length: 15 }, (_, i) => ({ name: `ワザ${i + 1}` }))
     };
   }
@@ -260,17 +259,14 @@
   // ---------- app state ----------
   const APP = {
     soul: null,
-
     envDraft: { temp: 0, hum: 50, light: 50 },
     envActive: { temp: 0, hum: 50, light: 50 },
 
-    // sprite anim
     animTimer: null,
     face: 1,
     walkX: 0,
     walkDir: 1,
     walkRange: 70,
-    // pace
     stepPx: 1.9,
     frame: 0,
     turning: 0
@@ -284,28 +280,20 @@
       DOM.startView.classList.remove("active");
       DOM.mainView.classList.add("active");
       if (DOM.tabs) DOM.tabs.style.display = "flex";
-      // start view には触れる要素があっても良いが、表示は切る
+      if (DOM.comebackBtn) DOM.comebackBtn.style.display = "inline-flex";
     } else {
       DOM.mainView.classList.remove("active");
       DOM.startView.classList.add("active");
       if (DOM.tabs) DOM.tabs.style.display = "none";
+      if (DOM.comebackBtn) DOM.comebackBtn.style.display = "none";
     }
   }
 
   // ---------- tab control ----------
   function showTab(key) {
-    // buttons
-    DOM.tabBtns.forEach(btn => {
-      btn.classList.toggle("active", btn.dataset.tab === key);
-    });
-    // panels
-    DOM.tabPanels.forEach(panel => {
-      const idv = panel.id || "";
-      const matches = idv === `tab-${key}`;
-      panel.classList.toggle("active", matches);
-    });
+    DOM.tabBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.tab === key));
+    DOM.tabPanels.forEach(panel => panel.classList.toggle("active", panel.id === `tab-${key}`));
 
-    // anim control
     if (key === "home") startAnim();
     else stopAnim();
   }
@@ -326,12 +314,9 @@
       const i = clamp(parseInt(DOM.humiditySlider.value, 10) || 0, 0, hum.length - 1);
       APP.envDraft.hum = Number(hum[i]);
     }
-
-    // light from active button
     const act = DOM.lightBtns.find(b => b.classList.contains("active"));
-    APP.envDraft.light = act ? Number(act.dataset.light) : (Number.isFinite(APP.envDraft.light) ? APP.envDraft.light : 50);
+    APP.envDraft.light = act ? Number(act.dataset.light) : 50;
 
-    // water: hum=100 → label water depth
     if (DOM.lightLabel) DOM.lightLabel.textContent = (APP.envDraft.hum === 100) ? "水深" : "光量";
     if (DOM.lightValue) DOM.lightValue.textContent = String(APP.envDraft.light);
   }
@@ -350,14 +335,12 @@
       const p = G.previewAttribute(APP.envDraft, now());
       DOM.envPreviewLabel.textContent = (p && p.label) ? p.label : "無属性";
     } else {
-      // fallback: hum==100 → ストーム / else 無属性
       DOM.envPreviewLabel.textContent = (APP.envDraft.hum === 100) ? "ストーム" : "無属性";
     }
   }
 
   function initSliders() {
     const { temp, hum } = getSteps();
-
     if (DOM.tempSlider) {
       DOM.tempSlider.min = "0";
       DOM.tempSlider.max = String(Math.max(0, temp.length - 1));
@@ -370,8 +353,6 @@
       DOM.humiditySlider.step = "1";
       DOM.humiditySlider.value = String(nearestIndex(hum, APP.envDraft.hum));
     }
-
-    // light buttons default
     setLightActive(APP.envDraft.light);
     updateDraftFromUI();
     updateEnvLabels();
@@ -404,18 +385,12 @@
     }
 
     const info = G.rankEnv(APP.soul, APP.envActive, now());
-
-    // ここは「エリア名表示」に寄せる（エリアが無い場合は属性名）
     const label = info.rankKey === "NEUTRAL"
       ? "無属性"
       : (info.areaName || info.envAttrLabel || "未知");
 
     DOM.envAttributeLabel.textContent = label;
-
-    // 育成タイマー表記（本格育成は別ロジックがある想定なので、ここでは最低限）
-    if (DOM.growthTimer) {
-      DOM.growthTimer.textContent = (info.rankKey === "NEUTRAL") ? "環境成長なし" : "育成中";
-    }
+    if (DOM.growthTimer) DOM.growthTimer.textContent = (info.rankKey === "NEUTRAL") ? "環境成長なし" : "育成中";
   }
 
   // ---------- legendz UI ----------
@@ -442,11 +417,8 @@
     if (DOM.strikeStat) DOM.strikeStat.textContent = String(Number(base.strike || 0) + Number(grow.strike || 0));
     if (DOM.healStat) DOM.healStat.textContent = String(Number(base.heal || 0) + Number(grow.heal || 0));
 
-    if (DOM.nicknameInput) {
-      DOM.nicknameInput.value = APP.soul.nickname || "";
-    }
+    if (DOM.nicknameInput) DOM.nicknameInput.value = APP.soul.nickname || "";
 
-    // waza slots
     if (DOM.skillSlots) {
       const slots = isArr(APP.soul.wazaSlots) ? APP.soul.wazaSlots : [];
       DOM.skillSlots.innerHTML = "";
@@ -456,18 +428,13 @@
         btn.type = "button";
         btn.className = "skill-slot";
         btn.textContent = name;
-
-        // 「試し撃ち」復活（alertは使わない）
-        btn.addEventListener("click", () => {
-          showMiniToast(`試し撃ち：${name}`);
-        });
-
+        btn.addEventListener("click", () => showMiniToast(`試し撃ち：${name}`));
         DOM.skillSlots.appendChild(btn);
       }
     }
   }
 
-  // ---------- mini toast (no native alert) ----------
+  // ---------- mini toast ----------
   let toastTimer = null;
   function showMiniToast(text) {
     let el = id("tspToast");
@@ -492,12 +459,10 @@
     el.textContent = text;
     el.style.opacity = "1";
     if (toastTimer) clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => {
-      el.style.opacity = "0";
-    }, 1200);
+    toastTimer = setTimeout(() => { el.style.opacity = "0"; }, 1200);
   }
 
-  // ---------- confirm modal (home neutral) ----------
+  // ---------- confirm modal ----------
   function ensureConfirmModal() {
     let modal = id("tspConfirm");
     if (modal) return modal;
@@ -521,7 +486,6 @@
     card.style.boxShadow = "0 12px 40px rgba(0,0,0,0.35)";
 
     const title = document.createElement("div");
-    title.id = "tspConfirmTitle";
     title.style.fontSize = "18px";
     title.style.fontWeight = "800";
     title.style.marginBottom = "12px";
@@ -560,21 +524,15 @@
 
     modal._noBtn = noBtn;
     modal._yesBtn = yesBtn;
-
     return modal;
   }
 
   function confirmNeutral(onYes) {
     const modal = ensureConfirmModal();
     modal.style.display = "flex";
-
     const close = () => { modal.style.display = "none"; };
-
     modal._noBtn.onclick = () => close();
-    modal._yesBtn.onclick = () => {
-      close();
-      onYes && onYes();
-    };
+    modal._yesBtn.onclick = () => { close(); onYes && onYes(); };
   }
 
   // ---------- sprite ----------
@@ -585,14 +543,11 @@
 
   function ensureSpriteBase() {
     if (!DOM.spriteViewport || !DOM.spriteSheetLayer) return;
-
-    // viewport: MUST clip
     DOM.spriteViewport.style.width = "24px";
     DOM.spriteViewport.style.height = "32px";
     DOM.spriteViewport.style.overflow = "hidden";
-    DOM.spriteViewport.style.borderRadius = "0"; // 角丸OFF
+    DOM.spriteViewport.style.borderRadius = "0";
 
-    // sheet layer
     DOM.spriteSheetLayer.style.width = "96px";
     DOM.spriteSheetLayer.style.height = "64px";
     DOM.spriteSheetLayer.style.backgroundImage = `url("${spriteUrl()}")`;
@@ -603,10 +558,8 @@
   }
 
   function setFace(face, moveDir) {
-    // face: 1..8
     const f = clamp(face, 1, 8);
     APP.face = f;
-
     if (!DOM.spriteSheetLayer) return;
 
     const idx = f - 1;
@@ -616,11 +569,7 @@
     const y = row * 32;
 
     DOM.spriteSheetLayer.style.backgroundPosition = `-${x}px -${y}px`;
-
-    // sheets are LEFT-facing
-    // moving RIGHT => flip to face right
-    // moving LEFT  => normal (face left)
-    const flip = moveDir > 0 ? -1 : 1;
+    const flip = moveDir > 0 ? -1 : 1; // sheets are LEFT-facing
     DOM.spriteSheetLayer.style.transform = `scaleX(${flip})`;
   }
 
@@ -640,7 +589,7 @@
   function currentRank() {
     const G = window.TSP_GAME;
     if (!G || typeof G.rankEnv !== "function" || !APP.soul) {
-      return { rankKey: "NEUTRAL", rankLabel: "無属性環境" };
+      return { rankKey: "NEUTRAL" };
     }
     return G.rankEnv(APP.soul, APP.envActive, now());
   }
@@ -648,7 +597,6 @@
   function startAnim() {
     stopAnim();
     if (!DOM.spriteViewport || !DOM.spriteSheetLayer) return;
-
     ensureSpriteBase();
 
     APP.walkX = 0;
@@ -659,17 +607,13 @@
     APP.animTimer = setInterval(() => {
       const r = currentRank();
 
-      // 表情決定
       if (r.rankKey === "WORST") {
-        // 最悪：ダウン
         setFace(8, APP.walkDir);
         APP.walkX = 0;
       } else if (r.rankKey === "SUPER_BEST" || r.rankKey === "BEST") {
-        // ベスト以上：喜び（演出はCSS/FX側）
         setFace(7, APP.walkDir);
         APP.walkX = 0;
       } else if (r.rankKey === "NEUTRAL") {
-        // 無属性：歩行＋折返しで振り向き
         if (APP.turning > 0) {
           setFace(3, APP.walkDir);
           APP.turning--;
@@ -682,14 +626,13 @@
         if (APP.walkX >= APP.walkRange) {
           APP.walkX = APP.walkRange;
           APP.walkDir = -1;
-          APP.turning = 30; // 0.5秒
+          APP.turning = 30;
         } else if (APP.walkX <= -APP.walkRange) {
           APP.walkX = -APP.walkRange;
           APP.walkDir = 1;
           APP.turning = 30;
         }
       } else {
-        // 良好/普通：その場で 1/2
         setFace((Math.floor(APP.frame / 30) % 2) ? 2 : 1, 1);
         APP.walkX = 0;
       }
@@ -701,19 +644,16 @@
 
   // ---------- reborn flows ----------
   function rebornNew() {
-    const saga = DOM.sagaNameInput ? String(DOM.sagaNameInput.value || "").trim() : "";
-    if (!saga) {
-      showMiniToast("サーガ名を入力してね");
-      return;
-    }
+    const saga = DOM.sagaInput ? String(DOM.sagaInput.value || "").trim() : "";
+    if (!saga) { showMiniToast("サーガ名を入力してね"); return; }
+
     const soul = makeDefaultSoul();
     soul.sagaName = saga;
-    soul.nickname = "";       // 未登録
+    soul.nickname = "";
     soul.isReborn = true;
 
     APP.soul = soul;
 
-    // 起動時は無属性固定
     APP.envDraft = { temp: 0, hum: 50, light: 50 };
     APP.envActive = { temp: 0, hum: 50, light: 50 };
 
@@ -728,33 +668,20 @@
   }
 
   function rebornFromMemory() {
-    const saga = DOM.sagaNameInput ? String(DOM.sagaNameInput.value || "").trim() : "";
-    const code = DOM.memoryCodeInput ? String(DOM.memoryCodeInput.value || "").trim() : "";
-    if (!saga) {
-      showMiniToast("サーガ名を入力してね");
-      return;
-    }
-    if (!code) {
-      showMiniToast("記憶コードを貼ってね");
-      return;
-    }
+    const saga = DOM.sagaInput ? String(DOM.sagaInput.value || "").trim() : "";
+    const code = DOM.soulTextInput ? String(DOM.soulTextInput.value || "").trim() : "";
+    if (!saga) { showMiniToast("サーガ名を入力してね"); return; }
+    if (!code) { showMiniToast("記憶コードを貼ってね"); return; }
 
     const soul = decodeSoulCode(code);
-    if (!soul) {
-      showMiniToast("記憶が空です / 不正です");
-      return;
-    }
-    if (soul.sagaName !== saga) {
-      showMiniToast("リボーン失敗（サーガ名が一致しません）");
-      return;
-    }
+    if (!soul) { showMiniToast("記憶が空です / 不正です"); return; }
+    if (soul.sagaName !== saga) { showMiniToast("リボーン失敗（サーガ名が一致しません）"); return; }
 
-    // 環境は保存しない＝無属性に戻す
     APP.soul = soul;
+
     APP.envDraft = { temp: 0, hum: 50, light: 50 };
     APP.envActive = { temp: 0, hum: 50, light: 50 };
 
-    // HP補完
     const maxHp = Number(APP.soul.baseStats?.hp || 400) + Number(APP.soul.grow?.hp || 0);
     if (!Number.isFinite(APP.soul.currentHp)) APP.soul.currentHp = maxHp;
 
@@ -770,9 +697,9 @@
 
   // ---------- events ----------
   function wireEvents() {
-    // start buttons
-    if (DOM.btnFindNewSoul) DOM.btnFindNewSoul.addEventListener("click", rebornNew);
-    if (DOM.btnRebornFromMemory) DOM.btnRebornFromMemory.addEventListener("click", rebornFromMemory);
+    // start buttons - ★現行HTML
+    if (DOM.newSoulBtn) DOM.newSoulBtn.addEventListener("click", rebornNew);
+    if (DOM.textRebornBtn) DOM.textRebornBtn.addEventListener("click", rebornFromMemory);
 
     // tabs
     DOM.tabBtns.forEach(btn => {
@@ -799,7 +726,7 @@
       });
     }
 
-    // light buttons
+    // light
     DOM.lightBtns.forEach(b => {
       b.addEventListener("click", () => {
         setLightActive(Number(b.dataset.light));
@@ -809,15 +736,12 @@
       });
     });
 
-    // env apply (3.2 sec adventure)
+    // env apply
     if (DOM.applyEnvBtn) {
       DOM.applyEnvBtn.addEventListener("click", () => {
-        // 先にdraft確定
         updateDraftFromUI();
         updateEnvLabels();
         updateEnvPreview();
-
-        // 3.2秒後に反映＆ホームへ
         setTimeout(() => {
           applyEnv();
           showTab("home");
@@ -834,7 +758,7 @@
       });
     }
 
-    // home neutral (confirm, and also reset env tab sliders)
+    // home neutral (confirm, also reset env tab)
     if (DOM.homeNeutralBtn) {
       DOM.homeNeutralBtn.addEventListener("click", () => {
         confirmNeutral(() => {
@@ -844,7 +768,7 @@
       });
     }
 
-    // nickname apply
+    // nickname
     if (DOM.nicknameApplyBtn) {
       DOM.nicknameApplyBtn.addEventListener("click", () => {
         if (!APP.soul) return;
@@ -855,20 +779,21 @@
         renderLegendz();
       });
     }
+
+    // comeback button: ここは既存実装が別ファイルにある想定でも邪魔しない
+    // ただ未リボーン時は非表示制御は setView() で行う
   }
 
   // ---------- boot ----------
   function boot() {
     bindDom();
 
-    // 必須DOMが無い場合でも落とさない（ただし表示は難しい）
     if (!DOM.startView || !DOM.mainView) return;
 
     APP.soul = loadSoul();
 
     if (APP.soul && APP.soul.isReborn) {
       setView(true);
-      // 環境は常に無属性で開始（仕様）
       APP.envDraft = { temp: 0, hum: 50, light: 50 };
       APP.envActive = { temp: 0, hum: 50, light: 50 };
 
@@ -880,13 +805,11 @@
     } else {
       setView(false);
       stopAnim();
-      // 未リボーン時：tabsは必ず消す
-      if (DOM.tabs) DOM.tabs.style.display = "none";
     }
 
     wireEvents();
 
-    // game.jsが遅れて完成する環境でも、スライダーだけ後追いできるように軽く再初期化
+    // 軽い後追い初期化（TSP_GAME準備待ち）
     let tries = 0;
     const t = setInterval(() => {
       tries++;
