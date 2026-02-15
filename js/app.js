@@ -1,12 +1,21 @@
 // FILE: js/app.js
 /* =========================================================
- * js/app.js  v0.78-FX5
- * 変更点（今回）：
- * 1) 最悪環境（Rank.bad）でも上から「暗い系絵文字」をパラパラ降らせる
- *    - 良好環境（♪パラパラ）と同じ仕組み（scene内パーティクル）
- * 2) envPreview（予想環境）判定で envDraft.light も渡す（湿度100=水中の判定ブレ防止）
+ * js/app.js  v0.78-FX4+ (hotfix)
  *
- * 重要：ID/DOM構造は変更しない（既存HTML/CSS前提）
+ * 目的（今回）：
+ * 1) ホームの表示が「属性名（トルネード等）」になっているのを修正
+ *    => エリア名（成層圏/山岳地帯/…）を優先表示にする
+ *    - 無属性：無属性
+ *    - 水中：エリア名（北海深海など）
+ *    - 陸上：エリア名（成層圏など）
+ *    - 併記でランク（超ベスト/ベスト/良好/普通/最悪）を付ける
+ *
+ * 2) 既存仕様（歩行/表情/育成/モーダル等）はノータッチ方針
+ *
+ * 注意：
+ * - IDは絶対に変更しない
+ * - HTML/CSS構造も変えない
+ * - FXが消え続ける問題の修正（前回分）は維持
  * ========================================================= */
 
 (function () {
@@ -150,7 +159,6 @@
     superAcc: 0,
     bestAcc: 0,
     goodAcc: 0,
-    badAcc: 0,   // ★追加：最悪の「暗い絵文字」パラパラ
   };
 
   // ===== DOM refs =====
@@ -396,7 +404,8 @@
     humidityValue.textContent = `${envDraft.hum}％`;
     updateLightLabelByHumidity();
 
-    // ★修正：light も渡す（湿度100のときに水中属性判定がブレない）
+    // 予想環境：属性のみ（ワクワク維持）
+    // ※envAttributeはresolverにlight不要（陸上は無視）なので従来通り
     const attr = window.TSP_GAME.envAttribute(envDraft.temp, envDraft.hum, envDraft.light);
     envPreviewLabel.textContent = (attr === "neutral") ? "無属性" : attrJp(attr);
   }
@@ -438,6 +447,7 @@
   }
 
   function setFacing(direction) {
+    // ※既存挙動維持（前回の修正に合わせたまま）
     spriteViewport.style.transform = (direction === "right") ? "scaleX(-1)" : "scaleX(1)";
   }
 
@@ -580,33 +590,7 @@
     }
   }
 
-  // ★最悪：暗い絵文字がパラパラ（CSSのfx-badに加えて降らせる）
-  function emitBad(dtSec) {
-    if (!scene) return;
-    scene.classList.add("fx-bad");
-
-    FX.badAcc += dtSec;
-    const interval = 0.38; // パラパラ感
-    while (FX.badAcc >= interval) {
-      FX.badAcc -= interval;
-
-      const pool = ["🌑", "☁️", "💤", "🕳️"];
-      const text = pool[Math.floor(Math.random() * pool.length)];
-
-      const xPct = rand(6, 94);
-      const yPct = rand(-8, 8);
-      const dur = rand(1.9, 2.8);
-      const dx = rand(-10, 10);
-      const dy = rand(160, 260);
-      const rot = rand(-10, 10);
-      const scale = rand(0.9, 1.1);
-      const sizePx = rand(14, 18);
-
-      // 良好のパラパラと同系統でOK
-      spawnParticle({ text, xPct, yPct, cls: "tsp-drift", dur, dx, dy, rot, scale, sizePx });
-    }
-  }
-
+  // 最悪：暗い雰囲気（CSSに任せる）
   function applyBadFx() {
     if (!scene) return;
     scene.classList.add("fx-bad");
@@ -677,10 +661,22 @@
     FX.superAcc = 0;
     FX.bestAcc = 0;
     FX.goodAcc = 0;
-    FX.badAcc = 0; // ★追加
 
     lastRankKey = newKey;
     lastEnvAttr = info.envAttr;
+  }
+
+  // ★追加：ホーム表示用「エリア名優先」ラベル
+  function homeEnvLabel(info) {
+    const R = window.TSP_GAME.Rank;
+
+    if (!info || info.rank === R.neutral) return "無属性";
+
+    // エリア名が取れるなら最優先
+    const areaName = safeText(info.areaName);
+    const main = areaName ? areaName : attrJp(info.envAttr);
+
+    return `${main}（${rankLabel(info.rank)}）`;
   }
 
   function renderByCurrentEnv(dtSec) {
@@ -690,13 +686,10 @@
     const info = window.TSP_GAME.computeRank(MONSTER, envApplied, now, soul.attribute);
     const R = window.TSP_GAME.Rank;
 
-    if (info.rank === R.neutral) {
-      envAttributeLabel.textContent = "無属性";
-    } else {
-      const a = attrJp(info.envAttr);
-      envAttributeLabel.textContent = `${a}（${rankLabel(info.rank)}）`;
-    }
+    // ★修正点：ホーム表示はエリア名優先
+    envAttributeLabel.textContent = homeEnvLabel(info);
 
+    // 背景色は属性（従来通り）
     setHomeBackgroundByEnvAttr(info.envAttr);
 
     const key = makeRankKey(info);
@@ -706,6 +699,7 @@
 
     updateHomeNeutralButtonVisibility(info);
 
+    // ランク別 表情・演出
     switch (info.rank) {
       case R.superbest:
         setFacing("left");
@@ -740,7 +734,6 @@
         setFacing("left");
         renderFrame(8);
         applyBadFx();
-        emitBad(dtSec); // ★追加：暗い絵文字パラパラ
         centerSprite();
         break;
 
@@ -942,8 +935,10 @@
   function resetToNeutralEnvApplied() {
     envApplied = { temp: 0, hum: 50, light: 50 };
     secondsAccum = 0;
+
     lastRankKey = null;
     lastEnvAttr = null;
+
     updateGrowthPreviewAndTimer();
     renderByCurrentEnv(0);
   }
@@ -974,7 +969,6 @@
     FX.superAcc = 0;
     FX.bestAcc = 0;
     FX.goodAcc = 0;
-    FX.badAcc = 0;
 
     lastRankKey = null;
     lastEnvAttr = null;
@@ -1106,8 +1100,10 @@
     applyEnvBtn.addEventListener("click", async () => {
       try {
         await playAdventureAndApply();
+
         lastRankKey = null;
         lastEnvAttr = null;
+
       } catch (e) {
         lockUI(false);
         showError("applyEnvBtn", e);
