@@ -1,9 +1,11 @@
 /* FILE: css/app.css */
 /* =========================================================
-   TalisPod v0.78.x - app.css
-   既存のデザインは維持しつつ、今回の追加分だけ反映：
-   ★変更：冒険中アニメーション（.adventure-overlay）を
-         「画面中央・最前面・浮いている」表示に変更
+   TalisPod v0.79 (UI i18n: 日本語/English 併記)
+   方針：
+   - 単語： "日本語 / English"（同一行）
+   - 文章：2段（JP行 + EN行）
+   - タブ等の簡単英単語：英語のみ（HTML側で対応）
+   - 既存UI/演出は極力そのまま（IDは絶対に変えない）
    ========================================================= */
 
 :root{
@@ -47,7 +49,27 @@ button, input, textarea{
 .view{ display:none; }
 .view.active{ display:block; }
 
-/* ===== Header ===== */
+/* =========================================================
+   i18n helpers（HTMLに span/class が増えても崩れにくく）
+   ========================================================= */
+.tsp-dual{ display:flex; flex-direction:column; gap:2px; }
+.tsp-dual .jp{ font-size: 13px; color: var(--text); line-height: 1.35; }
+.tsp-dual .en{ font-size: 12px; color: var(--muted); line-height: 1.25; letter-spacing: 0.01em; }
+
+.tsp-inline{ display:inline; }
+.tsp-inline .jp, .tsp-inline .en{ display:inline; }
+.tsp-inline .sep{ opacity:0.6; margin: 0 6px; }
+
+.small-en{ font-size: 12px; color: var(--muted); }
+.small-jp{ font-size: 13px; color: var(--text); }
+
+/* buttons with two lines inside */
+.btn-dual{ display:flex; flex-direction:column; align-items:center; gap:2px; }
+.btn-dual .en{ font-size: 11.5px; color: var(--muted); line-height: 1.1; }
+
+/* =========================================================
+   Header
+   ========================================================= */
 .header{
   position: sticky;
   top: 0;
@@ -62,8 +84,6 @@ button, input, textarea{
   margin: 0 auto;
   padding: 10px 0 8px;
 }
-
-/* ヘッダー左右レイアウト */
 .header-inner--with-action{
   display:flex;
   align-items:flex-start;
@@ -76,16 +96,6 @@ button, input, textarea{
   align-items:flex-start;
   justify-content:flex-end;
 }
-.header-right #comebackBtn{
-  padding: 10px 12px;
-  border-radius: 14px;
-  border: 1px solid var(--line);
-  background: rgba(255,255,255,0.12);
-  cursor:pointer;
-}
-.header-right #comebackBtn:hover{
-  background: rgba(255,255,255,0.18);
-}
 .header-title{
   font-weight: 800;
   letter-spacing: 0.02em;
@@ -97,7 +107,22 @@ button, input, textarea{
   line-height: 1.3;
 }
 
-/* cards/panels */
+/* comeback */
+.header-right #comebackBtn{
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.12);
+  cursor:pointer;
+  white-space: nowrap;
+}
+.header-right #comebackBtn:hover{
+  background: rgba(255,255,255,0.18);
+}
+
+/* =========================================================
+   Cards / Panels
+   ========================================================= */
 .panel, .start-card{
   background: var(--panel);
   border: 1px solid var(--line);
@@ -134,7 +159,9 @@ button, input, textarea{
   margin-top: 10px;
 }
 
-/* buttons */
+/* =========================================================
+   Buttons
+   ========================================================= */
 button{
   border: 1px solid var(--line);
   background: var(--btn);
@@ -166,18 +193,17 @@ button.ghost:hover{
   padding: 14px;
   box-shadow: 0 10px 28px rgba(0,0,0,0.28);
 
-  /* ★演出用：擬似要素とパーティクルを扱うため */
   position: relative;
   overflow: hidden;
 }
 
-/* scene の中身を擬似要素より前面に */
+/* 擬似要素より前面 */
 .scene > *{
   position: relative;
   z-index: 1;
 }
 
-/* ランク別背景演出：共通土台 */
+/* ランク別背景演出：共通 */
 .scene::before,
 .scene::after{
   content:"";
@@ -188,7 +214,7 @@ button.ghost:hover{
   opacity: 0;
 }
 
-/* 超ベスト：派手なオーラ＋チカチカ */
+/* 超ベスト */
 .scene.fx-superbest::before{
   opacity: 1;
   background:
@@ -210,7 +236,7 @@ button.ghost:hover{
   animation: tspSuperShine 1.1s linear infinite;
 }
 
-/* ベスト：ピカピカ控えめ＋降り注ぎを引き立てる */
+/* ベスト */
 .scene.fx-best::before{
   opacity: 1;
   background:
@@ -228,7 +254,7 @@ button.ghost:hover{
   animation: tspBestSpark 1.6s ease-in-out infinite;
 }
 
-/* 良好：ほんのり明るい */
+/* 良好 */
 .scene.fx-good::before{
   opacity: 1;
   background:
@@ -236,7 +262,7 @@ button.ghost:hover{
   animation: tspGoodBreath 2.2s ease-in-out infinite;
 }
 
-/* 最悪：暗幕＋ビネット＋ズーン脈動 */
+/* 最悪：暗幕＋ビネット＋ズーン */
 .scene.fx-bad::before{
   opacity: 1;
   background:
@@ -249,8 +275,6 @@ button.ghost:hover{
     radial-gradient(520px 320px at 50% 40%, transparent 35%, rgba(0,0,0,0.42) 75%);
   mix-blend-mode: multiply;
 }
-
-/* 追加で雰囲気を落とす */
 .scene.fx-bad{
   filter: saturate(0.72) brightness(0.92);
 }
@@ -272,7 +296,7 @@ button.ghost:hover{
   color: var(--text);
 }
 
-/* sprite wrapper */
+/* sprite */
 #spriteMover{
   margin: 14px auto 10px;
   width: fit-content;
@@ -314,22 +338,20 @@ button.ghost:hover{
 .scene.attr-storm{ background: rgba(80, 170, 255, 0.22); }
 
 /* =========================================================
-   パーティクル（♪✨） 共通
+   Particles（♪✨）
    ========================================================= */
 .tsp-particle{
   position:absolute;
   pointer-events:none;
   user-select:none;
-  z-index: 2; /* scene内の上に */
+  z-index: 2;
   opacity: 0.95;
   will-change: transform, opacity;
   text-shadow: 0 6px 18px rgba(0,0,0,0.35);
 }
 
-/* 超ベスト：舞う/飛ぶ */
-.tsp-fly{
-  animation: tspFly var(--tspDur, 1.6s) ease-out forwards;
-}
+/* 超ベスト：飛ぶ */
+.tsp-fly{ animation: tspFly var(--tspDur, 1.6s) ease-out forwards; }
 @keyframes tspFly{
   0%{ transform: translate3d(0,0,0) scale(var(--tspS,1)); opacity: 0; }
   10%{ opacity: 1; }
@@ -339,20 +361,16 @@ button.ghost:hover{
   }
 }
 
-/* ベスト/良好：降る */
-.tsp-fall{
-  animation: tspFall var(--tspDur, 1.8s) linear forwards;
-}
+/* ベスト：降る */
+.tsp-fall{ animation: tspFall var(--tspDur, 1.8s) linear forwards; }
 @keyframes tspFall{
   0%{ transform: translate3d(0,-10px,0) scale(var(--tspS,1)); opacity: 0; }
   10%{ opacity: 1; }
   100%{ transform: translate3d(var(--tspDX, 0px), var(--tspDY, 180px), 0) scale(var(--tspS,1)); opacity: 0; }
 }
 
-/* 良好：パラパラ用の軽い揺れ */
-.tsp-drift{
-  animation: tspDrift var(--tspDur, 2.0s) ease-in-out forwards;
-}
+/* 良好：パラパラ */
+.tsp-drift{ animation: tspDrift var(--tspDur, 2.0s) ease-in-out forwards; }
 @keyframes tspDrift{
   0%{ transform: translate3d(0,-8px,0) rotate(-6deg) scale(var(--tspS,1)); opacity: 0; }
   12%{ opacity: 0.9; }
@@ -360,7 +378,7 @@ button.ghost:hover{
   100%{ transform: translate3d(-6px, 160px, 0) rotate(12deg) scale(var(--tspS,1)); opacity: 0; }
 }
 
-/* 既存の note-only は残す（互換） */
+/* legacy note-only */
 .fx-note-only{
   position:absolute;
   font-size: 18px;
@@ -371,6 +389,23 @@ button.ghost:hover{
   0%{ transform: translateX(-50%) translateY(0); opacity: 0.8; }
   50%{ transform: translateX(-50%) translateY(-8px); opacity: 1; }
   100%{ transform: translateX(-50%) translateY(0); opacity: 0.8; }
+}
+
+/* 最悪：暗い絵文字パラパラ（app.js が生成する想定） */
+.tsp-darkfall{
+  position:absolute;
+  pointer-events:none;
+  user-select:none;
+  z-index: 2;
+  animation: tspDarkFall var(--tspDur,2.2s) linear forwards;
+  opacity: 0.9;
+  filter: brightness(0.65) saturate(0.7);
+  text-shadow: 0 8px 18px rgba(0,0,0,0.5);
+}
+@keyframes tspDarkFall{
+  0%{ transform: translate3d(0,-10px,0) rotate(0deg); opacity:0; }
+  10%{ opacity:0.9; }
+  100%{ transform: translate3d(var(--tspDX,0px), var(--tspDY,220px), 0) rotate(12deg); opacity:0; }
 }
 
 /* =========================================================
@@ -443,41 +478,35 @@ button.ghost:hover{
   width: min(420px, 92%);
 }
 
-/* =========================================================
-   ★冒険中アニメーション（中央・最前面・浮遊）
-   置き換え：以前は「タブ内の下」に出す想定だったが、
-             ここでは画面中央モーダル風にする
-   ========================================================= */
+/* 冒険中（中央・最前面・浮遊） */
 .adventure-overlay{
-  position: fixed;              /* 画面基準 */
-  inset: 0;                     /* 全面 */
-  z-index: 200;                 /* 最前面 */
-  display: none;                /* JSで表示する時に flex にする */
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
   align-items: center;
   justify-content: center;
   padding: 16px;
-
-  background: rgba(0,0,0,0.55);
+  background: rgba(0,0,0,0.35);
   backdrop-filter: blur(2px);
-
-  margin: 0;                    /* 旧margin対策 */
-  text-align: center;
 }
-
-/* JS側で box を作る想定。無い場合でも見栄えが崩れにくい */
-.adventure-overlay__box{
-  padding: 14px 18px;
-  border-radius: 16px;
-  border: 1px solid rgba(255,255,255,0.16);
+.adventure-overlay .box{
+  width: min(520px, 92vw);
+  text-align: center;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,0.14);
   background: rgba(15,18,28,0.92);
-  box-shadow: 0 18px 36px rgba(0,0,0,0.40);
-
-  color: var(--text);
-  font-size: 14px;
-  line-height: 1.5;
-  letter-spacing: 0.02em;
-
-  transform: translateY(-2px);
+  box-shadow: 0 18px 42px rgba(0,0,0,0.45);
+  padding: 16px 14px;
+}
+.adventure-overlay .title{
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+.adventure-overlay .sub{
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.4;
 }
 
 /* =========================================================
@@ -595,7 +624,7 @@ button.ghost:hover{
   border-radius: 16px;
   background: rgba(255,255,255,0.08);
 }
-.tab-btn .ico{ font-size: 18px; }
+.tab-btn .ico{ font-size: 18px; line-height: 1; }
 .tab-btn .dot{
   width: 6px; height: 6px;
   border-radius: 999px;
@@ -696,7 +725,7 @@ body.unreborn #comebackBtn{
   100%{ opacity: 0.92; }
 }
 
-/* small screens tweaks */
+/* wide screens */
 @media (min-width: 700px){
   .legendz-grid{ grid-template-columns: 1fr 1fr; }
   .skill-slots{ grid-template-columns: 1fr 1fr; }
