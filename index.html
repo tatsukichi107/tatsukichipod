@@ -5,7 +5,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="format-detection" content="telephone=no" />
-  <title>【タリスポッド】</title>
+  <title>【TalisyPod】</title>
 
   <!-- 既存デザインは app.css 前提 -->
   <link rel="stylesheet" href="./css/app.css?v=079" />
@@ -20,7 +20,8 @@
   <header class="header" role="banner">
     <div class="header-inner header-inner--with-action">
       <div class="header-left">
-        <div class="header-title">【タリスポッド】</div>
+        <!-- 英語のみ -->
+        <div class="header-title">【TalisyPod】</div>
 
         <div class="header-lines">
           <div id="headerLine1" class="line"></div>
@@ -30,7 +31,6 @@
       </div>
 
       <div class="header-right">
-        <!-- 単語：日本語 / English（2段で入れたい場合は btn-dual を使う） -->
         <button id="comebackBtn" type="button" class="btn-dual">
           <span class="jp">カムバック</span>
           <span class="en">Comeback</span>
@@ -43,6 +43,7 @@
   <main id="startView" class="view active" role="main">
     <div class="container">
       <div class="start-card">
+
         <h2>
           <span class="tsp-dual">
             <span class="jp">サーガの名を刻め</span>
@@ -60,10 +61,11 @@
           <input id="sagaInput" type="text" inputmode="text" autocomplete="off" placeholder="" />
         </div>
 
+        <!-- 修正：見出し -->
         <h2>
           <span class="tsp-dual">
-            <span class="jp">ソウルドールの記憶からリボーン</span>
-            <span class="en">Reborn from Soul-doll memory</span>
+            <span class="jp">ソウルドールの記憶</span>
+            <span class="en">Soul doll memory</span>
           </span>
         </h2>
 
@@ -77,26 +79,30 @@
           <textarea id="soulTextInput" placeholder=""></textarea>
         </div>
 
+        <!-- 修正：ボタン文言 -->
         <div class="start-actions">
           <button id="textRebornBtn" type="button" class="btn-dual">
-            <span class="jp">記憶からリボーンする</span>
-            <span class="en">Reborn</span>
+            <span class="jp">ソウルドールをリボーンする</span>
+            <span class="en">Reborn from Soul doll</span>
           </button>
         </div>
 
+        <!-- 修正：見出し -->
         <h2 style="margin-top:16px;">
           <span class="tsp-dual">
-            <span class="jp">新たなソウルドールを見つける</span>
-            <span class="en">Find a new Soul-doll</span>
+            <span class="jp">ソウルドールを持っていない</span>
+            <span class="en">No have Soul dolls</span>
           </span>
         </h2>
 
+        <!-- 修正：ボタン文言 -->
         <div class="start-actions">
           <button id="newSoulBtn" type="button" class="btn-dual">
-            <span class="jp">ソウルドールを見つける</span>
-            <span class="en">Find</span>
+            <span class="jp">新たなソウルドールを見つける</span>
+            <span class="en">Find a new Soul doll</span>
           </button>
         </div>
+
       </div>
     </div>
   </main>
@@ -142,7 +148,7 @@
           </div>
         </div>
 
-        <!-- 無属性ボタンは scene の外（直下） -->
+        <!-- 修正：2行（改行） -->
         <div class="home-bottom-actions">
           <button id="homeNeutralBtn" type="button" class="ghost btn-dual">
             <span class="jp">無属性環境にする</span>
@@ -195,7 +201,8 @@
             <div class="env-row">
               <div class="label">
                 <span>
-                  <span id="lightLabel">光量</span><span class="small-en"> / Light/Depth</span>
+                  <!-- ここは app.js 側で 光量/水深 を切替する想定 -->
+                  <span id="lightLabel">光量</span><span class="small-en"> / Light</span>
                 </span>
                 <strong id="lightValue">50</strong>
               </div>
@@ -252,11 +259,8 @@
             </div>
 
             <div class="nick-edit nick-edit--top">
-              <label for="nicknameInput" style="color:var(--muted); font-size:13px;">
-                <span class="tsp-inline">
-                  <span class="jp">ニックネーム</span><span class="sep">/</span><span class="en">Nickname</span>
-                </span>
-              </label>
+              <!-- 修正：Nickname は英語のみ -->
+              <label for="nicknameInput" style="color:var(--muted); font-size:13px;">Nickname</label>
               <input id="nicknameInput" type="text" autocomplete="off" />
               <button id="nicknameApplyBtn" type="button" class="btn-dual">
                 <span class="jp">ニックネームを変更</span>
@@ -266,10 +270,12 @@
           </div>
 
           <div class="legendz-grid">
+            <!-- 修正：HPは片方だけ -->
             <div class="kvline">
-              <span class="tsp-inline"><span class="jp">HP</span><span class="sep">/</span><span class="en">HP</span></span>
+              <span>HP</span>
               <strong id="hpStat">-</strong>
             </div>
+
             <div class="kvline">
               <span class="tsp-inline"><span class="jp">マホウ</span><span class="sep">/</span><span class="en">Magic</span></span>
               <strong id="magicStat">-</strong>
@@ -278,12 +284,16 @@
               <span class="tsp-inline"><span class="jp">カウンター</span><span class="sep">/</span><span class="en">Counter</span></span>
               <strong id="counterStat">-</strong>
             </div>
+
+            <!-- 修正：Strike -> Attack -->
             <div class="kvline">
-              <span class="tsp-inline"><span class="jp">ダゲキ</span><span class="sep">/</span><span class="en">Strike</span></span>
+              <span class="tsp-inline"><span class="jp">ダゲキ</span><span class="sep">/</span><span class="en">Attack</span></span>
               <strong id="strikeStat">-</strong>
             </div>
+
+            <!-- 修正：Heal -> Recover -->
             <div class="kvline">
-              <span class="tsp-inline"><span class="jp">カイフク</span><span class="sep">/</span><span class="en">Heal</span></span>
+              <span class="tsp-inline"><span class="jp">カイフク</span><span class="sep">/</span><span class="en">Recover</span></span>
               <strong id="healStat">-</strong>
             </div>
           </div>
@@ -315,7 +325,7 @@
   </main>
 
   <!-- ===== Tabs ===== -->
-  <!-- ルール：タブは英単語のみ（＋絵文字はOK） -->
+  <!-- ルール：タブは英単語のみ（＋絵文字OK） -->
   <nav class="tabs" aria-label="tabs">
     <button class="tab-btn active" data-tab="home" type="button">
       <div class="ico">🏠</div>
