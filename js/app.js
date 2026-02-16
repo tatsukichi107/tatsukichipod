@@ -1,20 +1,37 @@
 // FILE: js/app.js
 /* =========================================================
- * js/app.js  v0.78.1 (UI tweak)
+ * js/app.js  v0.79-i18n-annotate (SAFE)
  *
- * 変更点（IDは変更しない）
- * 1) ヘッダーの「種族名」と「ニックネーム」を2行に分ける
- * 2) 「冒険中…」表示を 画面中央・最前面（モーダル風）にする
+ * 目的：
+ * - UI日本語に英語を「併記」する（切替ではなく同時表示）
+ * - 既存ID/class/DOM構造を絶対に変更しない（壊さない方針）
  *
- * 依存：
- * - window.TSP_STATE（state.js）
- * - window.TSP_GAME（game.js）
- * - window.TSP_AREAMAP / window.TSP_AREA（areaMap/areaResolver）
+ * 方針：
+ * - 既存テキストはHTMLのまま残す
+ * - 起動後に app.js が “表示だけ” を上書きして併記化する
+ * - i18nはこのファイル内に集約し、他機能へ影響を最小化
+ *
+ * 追加ルール（ユーザー要望）：
+ * - 単語： 「日本語 / English」
+ * - 文章： 2段（日本語→英語）
+ * - タブ等の簡単英単語：英語のみ（日本語なし）
+ *
+ * 既存機能：
+ * - スプライト/環境/育成/モーダル/パーティクル/カムバック 等は維持
  * ========================================================= */
 
 (function () {
   "use strict";
 
+  // =========================
+  // I18N MODE (ON/OFF)
+  // =========================
+  // 困ったら false にすると “併記処理だけ” を完全停止（セーブポイント復帰が楽）
+  const I18N_MODE = true;
+
+  // =========================
+  // DOM helpers
+  // =========================
   const $ = (id) => document.getElementById(id);
   const qsa = (sel) => Array.from(document.querySelectorAll(sel));
 
@@ -28,7 +45,9 @@
     return String(s ?? "").replace(/\s+/g, " ").trim();
   }
 
-  // ===== lightweight UI notice (no native dialogs) =====
+  // =========================
+  // Lightweight UI notice (no native dialogs)
+  // =========================
   let noticeModal = null;
   let toastEl = null;
   let toastTimer = null;
@@ -119,11 +138,205 @@
 
   function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-  // ===== Monster / sprite config =====
+  // =========================================================
+  // I18N (Annotation layer)  ★ここが今回の追加
+  // =========================================================
+  // SHORT: 英語のみ（タブなど）
+  // WORD : 日本語 / English
+  // SENT : 2段（日本語→英語）
+  const I18N = {
+    // tabs (SHORT)
+    tabs: {
+      home: "Home",
+      environment: "Environment",
+      legendz: "Legendz",
+      crystal: "Crystal",
+    },
+
+    // header (WORD)
+    header: {
+      saga: { jp: "サーガ名", en: "Saga" },
+      species: { jp: "種族名", en: "Species" },
+      nickname: { jp: "ニックネーム", en: "Nickname" },
+      unreborn: { jp: "未リボーン", en: "Unreborn" },
+      reborn: { jp: "リボーン中", en: "Reborn" },
+      comeback: { jp: "カムバック", en: "Comeback" },
+    },
+
+    // start view (SENT / WORD)
+    start: {
+      title1: { jp: "サーガの名を刻め", en: "Engrave the Saga Name" },
+      sagaLabel: { jp: "サーガ名（後から変更できません）", en: "Saga name (cannot be changed later)" },
+      title2: { jp: "ソウルドールの記憶からリボーン", en: "Reborn from Soul Doll Memory" },
+      memoryLabel: { jp: "ソウルドールの記憶（SOUL:〜）", en: "Soul Doll Memory (SOUL:...)" },
+      rebornFromMemory: { jp: "記憶からリボーンする", en: "Reborn from Memory" },
+      title3: { jp: "新たなソウルドールを見つける", en: "Find a New Soul Doll" },
+      newSoul: { jp: "ソウルドールを見つける", en: "Find Soul Doll" },
+    },
+
+    // environment (WORD)
+    env: {
+      forecast: { jp: "予想環境", en: "Forecast" },
+      decide: { jp: "環境決定", en: "Apply" },
+      resetDraft: { jp: "無属性に戻す", en: "Reset to Neutral" },
+      makeNeutral: { jp: "無属性環境にする", en: "Set Neutral" },
+      temperature: { jp: "温度", en: "Temperature" },
+      humidity: { jp: "湿度", en: "Humidity" },
+      light: { jp: "光量", en: "Light" },
+      depth: { jp: "水深", en: "Depth" },
+      neutral: { jp: "無属性", en: "Neutral" },
+    },
+
+    // legendz (WORD)
+    legendz: {
+      moves: { jp: "ワザ", en: "Moves" },
+      slots15: { jp: "ワザスロット（15）", en: "Move Slots (15)" },
+      changeNickname: { jp: "ニックネームを変更", en: "Change Nickname" },
+      trial: { jp: "試し撃ち", en: "Try" },
+    },
+
+    // modal (WORD/SENT)
+    modal: {
+      error: { jp: "エラー", en: "Error" },
+      notice: { jp: "お知らせ", en: "Notice" },
+      confirmNeutral: { jp: "ムゾクセイ？", en: "Neutral?" },
+      ok: { jp: "OK", en: "OK" },
+      yes: { jp: "はい", en: "Yes" },
+      no: { jp: "いいえ", en: "No" },
+      memoryTitle: { jp: "ソウルドールの記憶", en: "Soul Doll Memory" },
+      copy: { jp: "ソウルドールの記憶の保存(コピー)", en: "Copy Memory Code" },
+      doComeback: { jp: "カムバックする", en: "Comeback" },
+      back: { jp: "育成に戻る", en: "Back" },
+    },
+
+    // misc
+    adventure: { jp: "冒険中…", en: "Adventuring..." },
+    unregistered: { jp: "未登録", en: "Unregistered" },
+  };
+
+  function fmtWord(jp, en) {
+    if (!I18N_MODE) return String(jp ?? "");
+    const a = String(jp ?? "").trim();
+    const b = String(en ?? "").trim();
+    if (!a) return b;
+    if (!b) return a;
+    return `${a} / ${b}`;
+  }
+
+  function fmtSentence(jp, en) {
+    if (!I18N_MODE) return String(jp ?? "");
+    const a = String(jp ?? "").trim();
+    const b = String(en ?? "").trim();
+    if (!a) return b;
+    if (!b) return a;
+    return `${a}\n${b}`;
+  }
+
+  function setText(el, text) {
+    if (!el) return;
+    el.textContent = String(text ?? "");
+  }
+
+  function annotateTabsEnglishOnly() {
+    if (!I18N_MODE) return;
+    const buttons = qsa(".tab-btn");
+    buttons.forEach((btn) => {
+      const key = (btn.dataset && btn.dataset.tab) ? btn.dataset.tab : "";
+      if (!key) return;
+
+      const en = I18N.tabs[key];
+      if (!en) return;
+
+      // 既存の内部構造（.ico/.dot）がある場合は壊さない：テキスト部分だけ差し替え
+      // 1) もし「単純テキストのみ」なら btn.textContent を置換
+      // 2) もし子要素があるなら、"ホーム" 等のテキストノードっぽい部分を優先置換
+      if (btn.children && btn.children.length > 0) {
+        // よくある構造: <div class="ico">🏠</div><div>ホーム</div><div class="dot"></div>
+        const labelDiv = Array.from(btn.children).find((c) => c && c.tagName === "DIV" && !c.classList.contains("ico") && !c.classList.contains("dot"));
+        if (labelDiv) {
+          labelDiv.textContent = en;
+        } else {
+          // fallback: 最後のテキストっぽいDIV
+          const divs = Array.from(btn.children).filter(c => c && c.tagName === "DIV");
+          const candidate = divs.length ? divs[divs.length - 1] : null;
+          if (candidate && !candidate.classList.contains("dot") && !candidate.classList.contains("ico")) {
+            candidate.textContent = en;
+          }
+        }
+      } else {
+        btn.textContent = en;
+      }
+    });
+  }
+
+  function annotateStaticLabels() {
+    if (!I18N_MODE) return;
+
+    // Start view headings/buttons (safe by query)
+    // h2 in start-card order: title1, title2, title3
+    const startCard = document.querySelector(".start-card");
+    if (startCard) {
+      const h2s = Array.from(startCard.querySelectorAll("h2"));
+      if (h2s[0]) h2s[0].textContent = fmtSentence(I18N.start.title1.jp, I18N.start.title1.en);
+      if (h2s[1]) h2s[1].textContent = fmtSentence(I18N.start.title2.jp, I18N.start.title2.en);
+      // 3つ目は margin-top付いてる可能性がある
+      if (h2s[2]) h2s[2].textContent = fmtSentence(I18N.start.title3.jp, I18N.start.title3.en);
+
+      const sagaLabel = startCard.querySelector('label[for="sagaInput"]');
+      if (sagaLabel) sagaLabel.textContent = fmtSentence(I18N.start.sagaLabel.jp, I18N.start.sagaLabel.en);
+
+      const memLabel = startCard.querySelector('label[for="soulTextInput"]');
+      if (memLabel) memLabel.textContent = fmtSentence(I18N.start.memoryLabel.jp, I18N.start.memoryLabel.en);
+
+      const rebornBtn = $("textRebornBtn");
+      if (rebornBtn) rebornBtn.textContent = fmtWord(I18N.start.rebornFromMemory.jp, I18N.start.rebornFromMemory.en);
+
+      const newBtn = $("newSoulBtn");
+      if (newBtn) newBtn.textContent = fmtWord(I18N.start.newSoul.jp, I18N.start.newSoul.en);
+    }
+
+    // Environment tab
+    const envPreview = document.querySelector(".env-preview");
+    if (envPreview) {
+      // "予想環境：" の部分は構造が固定ではないので、先頭テキストだけ差し替える
+      // 例: 予想環境：<strong id="envPreviewLabel">無属性</strong>
+      const strong = $("envPreviewLabel");
+      if (strong) {
+        // strongは値だけ、prefixは親で
+        const label = fmtWord(I18N.env.forecast.jp, I18N.env.forecast.en);
+        // prefix保持: "label：" + strong
+        envPreview.childNodes.forEach((n) => {
+          if (n.nodeType === Node.TEXT_NODE) n.textContent = `${label}：`;
+        });
+      }
+    }
+
+    const neutralBtn = $("neutralBtn");
+    if (neutralBtn) neutralBtn.textContent = fmtWord(I18N.env.resetDraft.jp, I18N.env.resetDraft.en);
+
+    const applyBtn = $("applyEnvBtn");
+    if (applyBtn) applyBtn.textContent = fmtWord(I18N.env.decide.jp, I18N.env.decide.en);
+
+    const homeNeutralBtn = $("homeNeutralBtn");
+    if (homeNeutralBtn) homeNeutralBtn.textContent = fmtWord(I18N.env.makeNeutral.jp, I18N.env.makeNeutral.en);
+
+    // Comeback button label
+    const cb = $("comebackBtn");
+    if (cb) cb.textContent = fmtWord(I18N.header.comeback.jp, I18N.header.comeback.en);
+
+    // Legendz tab: skills title if present
+    const skillsH3 = document.querySelector(".skills h3");
+    if (skillsH3) skillsH3.textContent = fmtWord(I18N.legendz.moves.jp, I18N.legendz.moves.en);
+  }
+
+  // =========================================================
+  // Monster / sprite config
+  // =========================================================
   const MONSTER = {
     id: "windragon",
     spritePath: "./assets/sprites/windragon.png",
     superBest: { temp: -45, hum: 5, waterDepth: 50 },
+    // bestAreaId は game.js 側でフォールバック対応済み想定
   };
 
   const SHEET = {
@@ -153,9 +366,12 @@
     superAcc: 0,
     bestAcc: 0,
     goodAcc: 0,
+    badAcc: 0, // ★最悪パラパラ用（CSS class tsp-darkfall）
   };
 
-  // ===== DOM refs =====
+  // =========================================================
+  // DOM refs
+  // =========================================================
   let startView, mainView;
   let headerLine1, headerLine2, headerLine3;
 
@@ -199,9 +415,8 @@
   // ===== Skills event guard =====
   let skillsClickBound = false;
 
-  // ★FX state tracking
-  let lastRankKey = null;   // e.g. "neutral" / "superbest" etc.
-  let lastEnvAttr = null;   // "volcano" etc.
+  // FX state tracking
+  let lastRankKey = null;
 
   function lockUI(on) {
     uiLocked = on;
@@ -237,30 +452,32 @@
   // ===== Header =====
   function displayNickname(s) {
     const n = safeText(s && s.nickname);
-    return n ? n : "未登録";
+    return n ? n : I18N_MODE ? fmtWord(I18N.unregistered.jp, I18N.unregistered.en) : "未登録";
   }
 
-  // ★変更：種族名とニックネームを2行に分ける
   function setHeader() {
     if (!soul) {
       headerLine1.textContent = "";
       headerLine2.textContent = "";
-      headerLine3.textContent = "未リボーン";
+      headerLine3.textContent = I18N_MODE ? fmtWord(I18N.header.unreborn.jp, I18N.header.unreborn.en) : "未リボーン";
       return;
     }
-
     const saga = safeText(soul.sagaName);
     const sp = safeText(soul.speciesName);
     const nick = displayNickname(soul);
 
-    headerLine1.textContent = `サーガ名：${saga}`;
-    headerLine2.textContent = `種族名：${sp}`;
-    headerLine3.textContent = `ニックネーム：${nick}`;
+    const sagaLabel = fmtWord(I18N.header.saga.jp, I18N.header.saga.en);
+    const spLabel = fmtWord(I18N.header.species.jp, I18N.header.species.en);
+    const nnLabel = fmtWord(I18N.header.nickname.jp, I18N.header.nickname.en);
+
+    headerLine1.textContent = `${sagaLabel}：${saga}`;
+    headerLine2.textContent = `${spLabel}：${sp} / ${nnLabel}：${nick}`;
+    headerLine3.textContent = I18N_MODE ? fmtWord(I18N.header.reborn.jp, I18N.header.reborn.en) : "リボーン中";
   }
 
   function attrJp(attr) {
     const meta = window.TSP_GAME && window.TSP_GAME.ATTR_META;
-    if (attr === "neutral") return "無属性";
+    if (attr === "neutral") return I18N_MODE ? fmtWord(I18N.env.neutral.jp, I18N.env.neutral.en) : "無属性";
     return (meta && meta[attr] && meta[attr].jp) ? meta[attr].jp : String(attr || "");
   }
 
@@ -334,7 +551,7 @@
           <div class="name">${sk.name}</div>
           <div class="meta">${sk.meta} / Slot ${idx + 1}</div>
         </div>
-        <button type="button" class="try-btn" data-skill="${sk.id}">試し撃ち</button>
+        <button type="button" class="try-btn" data-skill="${sk.id}">${I18N_MODE ? fmtWord(I18N.legendz.trial.jp, I18N.legendz.trial.en) : "試し撃ち"}</button>
       `;
       skillSlots.appendChild(row);
     });
@@ -352,7 +569,7 @@
       const sk = DUMMY_SKILLS.find(s => s.id === id);
       if (!sk) return;
 
-      openNotice("試し撃ち", `${sk.name} を試し撃ち！`);
+      openNotice(I18N_MODE ? fmtWord("試し撃ち", "Try") : "試し撃ち", `${sk.name} を試し撃ち！`);
     });
   }
 
@@ -392,69 +609,20 @@
   }
 
   function updateLightLabelByHumidity() {
-    lightLabel.textContent = (Number(envDraft.hum) === 100) ? "水深" : "光量";
+    const isSea = (Number(envDraft.hum) === 100);
+    const jp = isSea ? I18N.env.depth.jp : I18N.env.light.jp;
+    const en = isSea ? I18N.env.depth.en : I18N.env.light.en;
+    lightLabel.textContent = I18N_MODE ? fmtWord(jp, en) : String(jp);
   }
 
   function refreshEnvUI() {
+    // 単語は「日本語 / English」ではなく、値表示が主なのでタイトルだけでOK
     tempValue.textContent = `${envDraft.temp}℃`;
     humidityValue.textContent = `${envDraft.hum}％`;
     updateLightLabelByHumidity();
 
-    // 予想環境は属性のみ（既存方針）
     const attr = window.TSP_GAME.envAttribute(envDraft.temp, envDraft.hum, envDraft.light);
-    envPreviewLabel.textContent = (attr === "neutral") ? "無属性" : attrJp(attr);
-  }
-
-  // =========================================================
-  // 冒険中オーバーレイ（中央・最前面）
-  // =========================================================
-  let adventureOverlayEl = null;
-
-  function ensureAdventureOverlay() {
-    if (adventureOverlayEl) return adventureOverlayEl;
-
-    const wrap = document.createElement("div");
-    // CSSで .adventure-overlay を fixed 中央にする想定だが、
-    // CSSが未反映でも動くように最低限のinlineを入れる
-    wrap.className = "adventure-overlay";
-    wrap.setAttribute("aria-live", "polite");
-    wrap.style.position = "fixed";
-    wrap.style.inset = "0";
-    wrap.style.zIndex = "200";
-    wrap.style.display = "none";
-    wrap.style.alignItems = "center";
-    wrap.style.justifyContent = "center";
-    wrap.style.background = "rgba(0,0,0,0.55)";
-    wrap.style.backdropFilter = "blur(2px)";
-    wrap.style.padding = "16px";
-
-    const box = document.createElement("div");
-    box.className = "adventure-overlay__box";
-    box.textContent = "冒険中…";
-    box.style.padding = "14px 18px";
-    box.style.borderRadius = "16px";
-    box.style.border = "1px solid rgba(255,255,255,0.16)";
-    box.style.background = "rgba(15,18,28,0.92)";
-    box.style.boxShadow = "0 18px 36px rgba(0,0,0,0.40)";
-    box.style.fontSize = "14px";
-
-    wrap.appendChild(box);
-    document.body.appendChild(wrap);
-
-    adventureOverlayEl = wrap;
-    return adventureOverlayEl;
-  }
-
-  function showAdventureOverlay(text = "冒険中…") {
-    const ov = ensureAdventureOverlay();
-    const box = ov.querySelector(".adventure-overlay__box");
-    if (box) box.textContent = String(text ?? "冒険中…");
-    ov.style.display = "flex";
-  }
-
-  function hideAdventureOverlay() {
-    if (!adventureOverlayEl) return;
-    adventureOverlayEl.style.display = "none";
+    envPreviewLabel.textContent = (attr === "neutral") ? (I18N_MODE ? fmtWord(I18N.env.neutral.jp, I18N.env.neutral.en) : "無属性") : attrJp(attr);
   }
 
   // ===== Adventure apply =====
@@ -463,10 +631,15 @@
 
     lockUI(true);
 
-    // ★変更：下に出すのではなく中央最前面に出す
-    showAdventureOverlay("冒険中…");
+    const tabEnv = tabEls.environment;
+    const overlay = document.createElement("div");
+    overlay.className = "adventure-overlay";
+    overlay.textContent = I18N_MODE ? fmtSentence(I18N.adventure.jp, I18N.adventure.en) : "冒険中…";
+    tabEnv.appendChild(overlay);
+
     await sleep(3000);
-    hideAdventureOverlay();
+
+    overlay.remove();
 
     envApplied = { ...envDraft };
     secondsAccum = 0;
@@ -511,7 +684,7 @@
 
   function removeParticles() {
     if (!scene) return;
-    qsa(".tsp-particle").forEach(p => p.remove());
+    qsa(".tsp-particle, .tsp-darkfall").forEach(p => p.remove());
   }
 
   function clearFxAllHard() {
@@ -520,21 +693,7 @@
     removeParticles();
   }
 
-  // legacy note-only
-  function setNoteFxLegacy() {
-    spriteFxLayer.innerHTML = "";
-    const n = document.createElement("div");
-    n.className = "fx-note-only";
-    n.textContent = "♪";
-    n.style.left = "50%";
-    n.style.bottom = "-6px";
-    n.style.transform = "translateX(-50%)";
-    spriteFxLayer.appendChild(n);
-  }
-
-  function rand(min, max) {
-    return min + Math.random() * (max - min);
-  }
+  function rand(min, max) { return min + Math.random() * (max - min); }
 
   function spawnParticle({ text, xPct, yPct, cls, dur, dx, dy, rot, scale, sizePx }) {
     if (!scene) return;
@@ -555,6 +714,40 @@
 
     const rmMs = Math.max(900, dur * 1000 + 220);
     setTimeout(() => { try { p.remove(); } catch {} }, rmMs);
+  }
+
+  // 最悪：暗い絵文字がパラパラ（CSS .tsp-darkfall に委譲）
+  function spawnDarkFall(dtSec) {
+    if (!scene) return;
+    scene.classList.add("fx-bad");
+
+    FX.badAcc += dtSec;
+    const interval = 0.25;
+    while (FX.badAcc >= interval) {
+      FX.badAcc -= interval;
+
+      const text = (Math.random() > 0.5) ? "😵‍💫" : "💤";
+      const xPct = rand(6, 94);
+      const yPct = rand(-10, 6);
+      const dx = rand(-20, 20);
+      const dy = rand(180, 260);
+      const dur = rand(1.6, 2.4);
+
+      const p = document.createElement("div");
+      p.className = "tsp-darkfall";
+      p.textContent = text;
+      p.style.left = `${xPct}%`;
+      p.style.top = `${yPct}%`;
+      p.style.setProperty("--tspDur", `${dur}s`);
+      p.style.setProperty("--tspDX", `${dx}px`);
+      p.style.setProperty("--tspDY", `${dy}px`);
+      p.style.fontSize = `${rand(14, 20)}px`;
+
+      scene.appendChild(p);
+
+      const rmMs = Math.max(900, dur * 1000 + 240);
+      setTimeout(() => { try { p.remove(); } catch {} }, rmMs);
+    }
   }
 
   // 超ベスト：飛び交う（♪✨混在）
@@ -643,12 +836,6 @@
     }
   }
 
-  // 最悪：暗い雰囲気（CSSに任せる）
-  function applyBadFx() {
-    if (!scene) return;
-    scene.classList.add("fx-bad");
-  }
-
   function centerSprite() {
     WALK.x = 0;
     applyMoveX(0);
@@ -705,16 +892,16 @@
   }
 
   function makeRankKey(info) {
-    return `${String(info.rank)}|${String(info.envAttr)}`;
+    return `${String(info.rank)}|${String(info.envAttr)}|${String(info.areaId)}`;
   }
 
-  function onRankChanged(newKey, info) {
+  function onRankChanged(newKey) {
     clearFxAllHard();
     FX.superAcc = 0;
     FX.bestAcc = 0;
     FX.goodAcc = 0;
+    FX.badAcc = 0;
     lastRankKey = newKey;
-    lastEnvAttr = info.envAttr;
   }
 
   function renderByCurrentEnv(dtSec) {
@@ -724,19 +911,20 @@
     const info = window.TSP_GAME.computeRank(MONSTER, envApplied, now, soul.attribute);
     const R = window.TSP_GAME.Rank;
 
-    // ★ホームは「エリア名優先」＋（ランク）
+    // HOME表示：エリア名優先（なければ属性）
     if (info.rank === R.neutral) {
-      envAttributeLabel.textContent = "無属性";
+      envAttributeLabel.textContent = I18N_MODE ? fmtWord(I18N.env.neutral.jp, I18N.env.neutral.en) : "無属性";
     } else {
-      const name = safeText(info.areaName) || attrJp(info.envAttr);
-      envAttributeLabel.textContent = `${name}（${rankLabel(info.rank)}）`;
+      const areaName = safeText(info.areaName);
+      const a = areaName ? areaName : attrJp(info.envAttr);
+      envAttributeLabel.textContent = `${a}（${rankLabel(info.rank)}）`;
     }
 
     setHomeBackgroundByEnvAttr(info.envAttr);
 
     const key = makeRankKey(info);
     if (key !== lastRankKey) {
-      onRankChanged(key, info);
+      onRankChanged(key);
     }
 
     updateHomeNeutralButtonVisibility(info);
@@ -775,7 +963,7 @@
       case R.bad:
         setFacing("left");
         renderFrame(8); // ダウン
-        applyBadFx();
+        spawnDarkFall(dtSec);
         centerSprite();
         break;
 
@@ -827,12 +1015,12 @@
     modal.className = "modal-backdrop";
     modal.innerHTML = `
       <div class="modal">
-        <div class="modal-title">ソウルドールの記憶</div>
+        <div class="modal-title">${I18N_MODE ? fmtWord(I18N.modal.memoryTitle.jp, I18N.modal.memoryTitle.en) : "ソウルドールの記憶"}</div>
         <textarea id="cbCodeArea" class="modal-code" readonly></textarea>
         <div class="modal-actions">
-          <button id="cbCopyBtn">ソウルドールの記憶の保存(コピー)</button>
-          <button id="cbRebornBtn">カムバックする</button>
-          <button id="cbCloseBtn">育成に戻る</button>
+          <button id="cbCopyBtn">${I18N_MODE ? fmtWord(I18N.modal.copy.jp, I18N.modal.copy.en) : "ソウルドールの記憶の保存(コピー)"}</button>
+          <button id="cbRebornBtn">${I18N_MODE ? fmtWord(I18N.modal.doComeback.jp, I18N.modal.doComeback.en) : "カムバックする"}</button>
+          <button id="cbCloseBtn">${I18N_MODE ? fmtWord(I18N.modal.back.jp, I18N.modal.back.en) : "育成に戻る"}</button>
         </div>
       </div>
     `;
@@ -858,11 +1046,11 @@
         try {
           if (navigator.clipboard && navigator.clipboard.writeText) {
             await navigator.clipboard.writeText(area.value);
-            toast("記憶をコピーしました");
+            toast(I18N_MODE ? fmtWord("記憶をコピーしました", "Copied") : "記憶をコピーしました");
           } else {
             area.focus();
             area.select();
-            openNotice("コピー", "自動コピー非対応です。\n選択された状態なので手動でコピーしてください。");
+            openNotice(I18N_MODE ? fmtWord("コピー", "Copy") : "コピー", I18N_MODE ? fmtSentence("自動コピー非対応です。選択された状態なので手動でコピーしてください。", "Auto-copy is not supported. Please copy manually.") : "自動コピー非対応です。\n選択された状態なので手動でコピーしてください。");
           }
         } catch (e) {
           showError("copy", e);
@@ -905,10 +1093,10 @@
     modal.className = "modal-backdrop";
     modal.innerHTML = `
       <div class="modal">
-        <div class="modal-title">ムゾクセイ？</div>
+        <div class="modal-title">${I18N_MODE ? fmtWord(I18N.modal.confirmNeutral.jp, I18N.modal.confirmNeutral.en) : "ムゾクセイ？"}</div>
         <div class="modal-actions" style="margin-top:12px;">
-          <button id="cfYesBtn">はい</button>
-          <button id="cfNoBtn" class="ghost">いいえ</button>
+          <button id="cfYesBtn">${I18N_MODE ? fmtWord(I18N.modal.yes.jp, I18N.modal.yes.en) : "はい"}</button>
+          <button id="cfNoBtn" class="ghost">${I18N_MODE ? fmtWord(I18N.modal.no.jp, I18N.modal.no.en) : "いいえ"}</button>
         </div>
       </div>
     `;
@@ -977,9 +1165,7 @@
   function resetToNeutralEnvApplied() {
     envApplied = { temp: 0, hum: 50, light: 50 };
     secondsAccum = 0;
-
     lastRankKey = null;
-    lastEnvAttr = null;
 
     updateGrowthPreviewAndTimer();
     renderByCurrentEnv(0);
@@ -1011,9 +1197,9 @@
     FX.superAcc = 0;
     FX.bestAcc = 0;
     FX.goodAcc = 0;
+    FX.badAcc = 0;
 
     lastRankKey = null;
-    lastEnvAttr = null;
 
     setHeader();
     refreshStatsUI();
@@ -1027,6 +1213,10 @@
 
     updateGrowthPreviewAndTimer();
     renderByCurrentEnv(0);
+
+    // ★i18n反映（リボーン後に表示される部分も含む）
+    annotateTabsEnglishOnly();
+    annotateStaticLabels();
   }
 
   // ===== Bind events =====
@@ -1050,7 +1240,7 @@
     newSoulBtn.addEventListener("click", () => {
       try {
         const saga = safeText(sagaInput.value);
-        if (!saga) return openNotice("入力", "サーガ名を入力してください");
+        if (!saga) return openNotice(I18N_MODE ? fmtWord("入力", "Input") : "入力", I18N_MODE ? fmtSentence("サーガ名を入力してください", "Please enter the saga name.") : "サーガ名を入力してください");
         soul = window.TSP_STATE.newSoulWindragon(saga);
         pipelineAfterReborn();
       } catch (e) {
@@ -1061,10 +1251,10 @@
     textRebornBtn.addEventListener("click", () => {
       try {
         const saga = safeText(sagaInput.value);
-        if (!saga) return openNotice("入力", "サーガ名を入力してください");
+        if (!saga) return openNotice(I18N_MODE ? fmtWord("入力", "Input") : "入力", I18N_MODE ? fmtSentence("サーガ名を入力してください", "Please enter the saga name.") : "サーガ名を入力してください");
 
         const code = safeText(soulTextInput.value);
-        if (!code) return openNotice("記憶", "記憶が空です");
+        if (!code) return openNotice(I18N_MODE ? fmtWord("記憶", "Memory") : "記憶", I18N_MODE ? fmtSentence("記憶が空です", "Memory code is empty.") : "記憶が空です");
 
         const parsed = window.TSP_STATE.parseSoulCode(code);
         window.TSP_STATE.assertSagaMatch(parsed, saga);
@@ -1088,7 +1278,7 @@
           openConfirmModal(() => {
             resetToNeutralEnvApplied();
             resetToNeutralEnvDraft();
-            toast("無属性環境に戻しました");
+            toast(I18N_MODE ? fmtWord("無属性環境に戻しました", "Set to Neutral") : "無属性環境に戻しました");
           });
         } catch (e) {
           showError("homeNeutralBtn", e);
@@ -1101,7 +1291,7 @@
         if (!soul) return;
         soul.nickname = safeText(nicknameInput.value);
         setHeader();
-        toast("ニックネームを更新しました");
+        toast(I18N_MODE ? fmtWord("ニックネームを更新しました", "Nickname updated") : "ニックネームを更新しました");
       } catch (e) {
         showError("nicknameApply", e);
       }
@@ -1121,7 +1311,7 @@
     neutralBtn.addEventListener("click", () => {
       try {
         resetToNeutralEnvDraft();
-        toast("ドラフトを無属性に戻しました");
+        toast(I18N_MODE ? fmtWord("ドラフトを無属性に戻しました", "Draft reset") : "ドラフトを無属性に戻しました");
       } catch (e) { showError("neutralBtn", e); }
     });
 
@@ -1143,10 +1333,8 @@
       try {
         await playAdventureAndApply();
         lastRankKey = null;
-        lastEnvAttr = null;
       } catch (e) {
         lockUI(false);
-        hideAdventureOverlay();
         showError("applyEnvBtn", e);
       }
     });
@@ -1250,6 +1438,11 @@
       bindSkillsClickOnce();
 
       bindEvents();
+
+      // ★起動時にi18n反映（未リボーン画面含む）
+      annotateTabsEnglishOnly();
+      annotateStaticLabels();
+
       requestAnimationFrame(rafLoop);
 
     } catch (e) {
