@@ -13,25 +13,6 @@
   <!-- iPhoneの入力ズーム抑制（保険） -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
 
-  <script>
-window.addEventListener('error', function(e){
-  try{
-    const m = document.createElement('div');
-    m.style.cssText = 'position:fixed;left:8px;right:8px;top:8px;z-index:99999;background:rgba(0,0,0,.85);color:#fff;padding:10px;border-radius:12px;font-size:12px;line-height:1.4;white-space:pre-wrap;';
-    m.textContent = 'JS ERROR:\n' + (e.message || e.error || 'unknown') + '\n' + (e.filename||'') + ':' + (e.lineno||'') ;
-    document.body.appendChild(m);
-  }catch(_){}
-});
-window.addEventListener('unhandledrejection', function(e){
-  try{
-    const m = document.createElement('div');
-    m.style.cssText = 'position:fixed;left:8px;right:8px;top:8px;z-index:99999;background:rgba(60,0,0,.85);color:#fff;padding:10px;border-radius:12px;font-size:12px;line-height:1.4;white-space:pre-wrap;';
-    m.textContent = 'PROMISE ERROR:\n' + (e.reason && (e.reason.message||e.reason) || 'unknown');
-    document.body.appendChild(m);
-  }catch(_){}
-});
-</script>
-  <script>document.documentElement.style.outline="6px solid #ff00ff";</script>
 </head>
 
 <body class="unreborn">
@@ -287,7 +268,7 @@ window.addEventListener('unhandledrejection', function(e){
 
           <div class="legendz-grid">
             <div class="kvline">
-              <span class="tsp-inline"><span class="jp">HP</span><span class="sep">/</span><span class="en">HP</span></span>
+             <span>HP</span>
               <strong id="hpStat">-</strong>
             </div>
             <div class="kvline">

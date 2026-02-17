@@ -315,7 +315,7 @@
       case Rank.normal:
         return { hpGrow: 10, elemGrow: 10, elemInterval: 3, healCap: 100, hpDmg: 0 };
       case Rank.bad:
-        return { hpGrow: 10, elemGrow: 10, elemInterval: 5, healCap: 0, hpDmg: 10 };
+        return { hpGrow: 0, elemGrow: 10, elemInterval: 5, healCap: 0, hpDmg: 10 };
       default:
         return { hpGrow: 0, elemGrow: 0, elemInterval: 0, healCap: 0, hpDmg: 0 };
     }
