@@ -1,352 +1,390 @@
-<!-- FILE: index.html -->
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ja">
+
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="format-detection" content="telephone=no" />
-  <title>【TalisPod】</title>
-
-  <!-- 既存デザインは app.css 前提 -->
-  <link rel="stylesheet" href="./css/app.css?v=079" />
-
-  <!-- iPhoneの入力ズーム抑制（保険） -->
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="description" content="TalisPod - Soul Doll Legendz育成シミュレーター。環境を操作してレジェンズを育て、魔王ジャバウォックを倒せ。">
+    <title>TalisPod – Soul Doll Legendz Trainer</title>
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./css/app.css">
 </head>
 
-<body class="unreborn">
+<body>
 
-  <!-- ===== Header ===== -->
-  <header class="header" role="banner">
-    <div class="header-inner header-inner--with-action">
-      <div class="header-left">
-        <!-- ★修正：TalisyPod → TalisPod（英語のみ） -->
-        <div class="header-title">【TalisPod】</div>
+    <div id="app">
 
-        <div class="header-lines">
-          <div id="headerLine1" class="line"></div>
-          <div id="headerLine2" class="line"></div>
-          <div id="headerLine3" class="line"></div>
-        </div>
-      </div>
-
-      <div class="header-right">
-        <button id="comebackBtn" type="button" class="btn-dual">
-          <span class="jp">カムバック</span>
-          <span class="en">Comeback</span>
-        </button>
-      </div>
-    </div>
-  </header>
-
-  <!-- ===== Start View ===== -->
-  <main id="startView" class="view active" role="main">
-    <div class="container">
-      <div class="start-card">
-        <h2>
-          <span class="tsp-dual">
-            <span class="jp">サーガの名を刻め</span>
-            <span class="en">Name your saga</span>
-          </span>
-        </h2>
-
-        <div class="field">
-          <label for="sagaInput">
-            <span class="tsp-inline">
-              <span class="jp">サーガ名</span><span class="sep">/</span><span class="en">Saga Name</span>
-            </span>
-            <span class="small-en">（後から変更できません / Cannot be changed later）</span>
-          </label>
-          <input id="sagaInput" type="text" inputmode="text" autocomplete="off" placeholder="" />
-        </div>
-
-        <h2>
-          <span class="tsp-dual">
-            <span class="jp">ソウルドールの記憶</span>
-            <span class="en">Soul doll memory</span>
-          </span>
-        </h2>
-
-        <div class="field">
-          <label for="soulTextInput">
-            <span class="tsp-dual">
-              <span class="jp">ソウルドールの記憶（SOUL1:〜）</span>
-              <span class="en">Memory code (SOUL1:...)</span>
-            </span>
-          </label>
-          <textarea id="soulTextInput" placeholder=""></textarea>
-        </div>
-
-        <div class="start-actions">
-          <button id="textRebornBtn" type="button" class="btn-dual">
-            <span class="jp">ソウルドールをリボーンする</span>
-            <span class="en">Reborn from Soul doll</span>
-          </button>
-        </div>
-
-        <h2 style="margin-top:16px;">
-          <span class="tsp-dual">
-            <span class="jp">ソウルドールを持っていない</span>
-            <span class="en">No have Soul dolls</span>
-          </span>
-        </h2>
-
-        <div class="start-actions">
-          <button id="newSoulBtn" type="button" class="btn-dual">
-            <span class="jp">新たなソウルドールを見つける</span>
-            <span class="en">Find a new Soul doll</span>
-          </button>
-        </div>
-      </div>
-    </div>
-  </main>
-
-  <!-- ===== Main View ===== -->
-  <main id="mainView" class="view" role="main">
-    <div class="container">
-
-      <!-- ===== HOME ===== -->
-      <section id="tab-home" class="tab-content active" aria-label="home">
-        <div class="scene attr-none">
-
-          <div class="home-top home-top--with-action">
-            <div class="kv">
-              <div>
-                <strong>
-                  <span class="tsp-inline">
-                    <span class="jp">環境</span><span class="sep">/</span><span class="en">Environment</span>
-                  </span>：
-                </strong>
-                <span id="envAttributeLabel">無属性</span>
-              </div>
-
-              <div>
-                <strong>
-                  <span class="tsp-inline">
-                    <span class="jp">育成</span><span class="sep">/</span><span class="en">Growth</span>
-                  </span>：
-                </strong>
-                <span id="growthTimer">環境成長なし</span>
-              </div>
-
-              <div id="growthPreview" class="kv"></div>
+        <!-- ===== HEADER ===== -->
+        <header class="header">
+            <div class="header-top">
+                <div>
+                    <span class="header-logo">TalisPod</span>
+                    <span class="header-version">v0.85</span>
+                </div>
+                <button id="btnComeback" class="btn-comeback">💎 Comeback</button>
             </div>
-          </div>
-
-          <!-- sprite -->
-          <div id="spriteMover" aria-label="legendz-mover">
-            <div id="spriteViewport" aria-label="legendz-sprite">
-              <div id="spriteSheetLayer"></div>
-              <div id="spriteFxLayer"></div>
+            <div id="headerInfo" class="header-info" style="display:none;">
+                <div class="header-stats-row">
+                    <span>Saga:</span> <span id="headerSaga">—</span> |
+                    <span id="headerSpeciesFull">—</span>
+                </div>
+                <div class="header-nickname-row">
+                    <span>Name:</span> <span id="headerNickname">—</span>
+                </div>
+                <div class="header-hp-row">
+                    <span class="header-hp-label">HP</span>
+                    <div class="header-hp-bar-bg">
+                        <div id="headerHPBar" class="header-hp-bar"></div>
+                    </div>
+                    <div id="headerHPText" class="header-hp-text">0 / 0</div>
+                </div>
             </div>
-          </div>
-        </div>
+        </header>
 
-        <!-- 無属性ボタンは scene の外（直下） -->
-        <div class="home-bottom-actions">
-          <button id="homeNeutralBtn" type="button" class="ghost btn-dual">
-            <span class="jp">無属性環境にする</span>
-            <span class="en">Set Neutral</span>
-          </button>
-        </div>
-      </section>
+        <!-- ===== START VIEW ===== -->
+        <div id="startView" style="display:flex;">
+            <div class="start-title">TalisPod</div>
+            <div class="start-subtitle">Soul Doll Legendz Trainer</div>
 
-      <!-- ===== ENVIRONMENT ===== -->
-      <section id="tab-environment" class="tab-content" aria-label="environment">
-        <div class="panel">
-          <h2 style="margin:0 0 10px;">
-            <span class="tsp-inline">
-              <span class="jp">環境</span><span class="sep">/</span><span class="en">Environment</span>
-            </span>
-          </h2>
-
-          <div class="env-grid">
-            <div class="env-top-actions">
-              <button id="neutralBtn" type="button" class="ghost btn-dual">
-                <span class="jp">無属性に戻す</span>
-                <span class="en">Reset to Neutral</span>
-              </button>
+            <div class="start-card">
+                <label for="inputSagaName">サーガ名 / Saga Name</label>
+                <input type="text" id="inputSagaName" placeholder="あなたのサーガ名を入力..." maxlength="30" autocomplete="off">
             </div>
 
-            <div class="env-row">
-              <div class="label">
-                <span class="tsp-inline">
-                  <span class="jp">温度</span><span class="sep">/</span><span class="en">Temperature</span>
-                </span>
-                <strong id="tempValue">0℃</strong>
-              </div>
-              <div class="range-wrap">
-                <input id="tempSlider" type="range" value="0" />
-              </div>
+            <div class="start-card">
+                <label for="inputSoulCode">Soul Doll の記憶 / Soul Code (復元用)</label>
+                <textarea id="inputSoulCode" placeholder="SOUL1:xxxxx...&#10;（新規の場合は空欄でOK）"></textarea>
             </div>
 
-            <div class="env-row">
-              <div class="label">
-                <span class="tsp-inline">
-                  <span class="jp">湿度</span><span class="sep">/</span><span class="en">Humidity</span>
-                </span>
-                <strong id="humidityValue">50％</strong>
-              </div>
-              <div class="range-wrap">
-                <input id="humiditySlider" type="range" value="0" />
-              </div>
-            </div>
-
-            <div class="env-row">
-              <div class="label">
-                <span>
-                  <span id="lightLabel">光量</span><span class="small-en"> / Light/Depth</span>
-                </span>
-                <strong id="lightValue">50</strong>
-              </div>
-
-              <div class="light-buttons" role="group" aria-label="light-buttons">
-                <button id="lightBtn0" type="button" class="light-btn" data-light="0">0</button>
-                <button id="lightBtn50" type="button" class="light-btn active" data-light="50">50</button>
-                <button id="lightBtn100" type="button" class="light-btn" data-light="100">100</button>
-              </div>
-            </div>
-
-            <div class="env-preview">
-              <span class="tsp-inline">
-                <span class="jp">予想環境</span><span class="sep">/</span><span class="en">Preview</span>
-              </span>：
-              <strong id="envPreviewLabel">無属性</strong>
-            </div>
-
-            <div class="env-actions">
-              <div class="row">
-                <button id="applyEnvBtn" type="button" class="btn-dual">
-                  <span class="jp">環境決定</span>
-                  <span class="en">Apply</span>
+            <div class="start-actions">
+                <button id="btnCodeReborn" class="btn btn-primary btn-full">
+                    <div>📜 ソウルドールからリボーンする</div>
+                    <div style="font-size: 0.7rem; font-weight: 400; opacity: 0.8; margin-top: 2px;">Reborn from Memory
+                    </div>
                 </button>
-              </div>
+                <button id="btnNewReborn" class="btn btn-secondary btn-full">
+                    <div>🔮 ソウルドールを発見する</div>
+                    <div style="font-size: 0.7rem; font-weight: 400; opacity: 0.6; margin-top: 2px;">Find a Soul Doll
+                    </div>
+                </button>
             </div>
-
-          </div>
         </div>
-      </section>
 
-      <!-- ===== LEGENDZ ===== -->
-      <section id="tab-legendz" class="tab-content" aria-label="legendz">
-        <div class="panel">
-          <h2 style="margin:0 0 10px;">
-            <span class="tsp-inline">
-              <span class="jp">レジェンズ</span><span class="sep">/</span><span class="en">Legendz</span>
-            </span>
-          </h2>
+        <!-- ===== MAIN VIEW ===== -->
+        <div id="mainView" style="display:none; flex-direction:column; flex:1; min-height:0;">
 
-          <div class="legendz-head">
-            <div class="kvline">
-              <span class="tsp-inline">
-                <span class="jp">種族名</span><span class="sep">/</span><span class="en">Species</span>
-              </span>
-              <strong id="speciesName">-</strong>
+            <!-- Tab Content -->
+            <div class="tab-content">
 
-              <span class="sep">　</span>
+                <!-- HOME TAB -->
+                <div id="tab-home" class="tab-pane active">
+                    <div class="scene-wrapper">
+                        <div id="scene" class="scene area-NEUTRAL">
+                            <div id="sprite" class="sprite"></div>
+                            <div id="growthAnimHome" class="growth-anim-layer"></div>
+                            <button id="btnSearch" class="btn btn-search" style="display:none;">🔍 サーチ / Search</button>
+                        </div>
+                    </div>
 
-              <span class="tsp-inline">
-                <span class="jp">属性</span><span class="sep">/</span><span class="en">Attribute</span>
-              </span>
-              <strong id="legendzAttribute">-</strong>
+                    <div class="home-info">
+                        <div class="info-row">
+                            <div class="info-card">
+                                <div class="info-label">現在地 / Area</div>
+                                <div id="homeAreaName" class="info-value">—</div>
+                            </div>
+                            <div class="info-card">
+                                <div class="info-label">コンディション / Rank</div>
+                                <div id="homeRankName" class="info-value rank-neutral">OFF</div>
+                            </div>
+                        </div>
+
+                        <div class="info-card-full">
+                            <div class="info-label">成長データ / Growth Info</div>
+                            <div class="growth-box">
+                                <div class="timer-section">
+                                    <span class="timer-label">Next Growth:</span>
+                                    <span id="homeTimer" class="info-value"
+                                        style="font-family: var(--font-mono); font-size: 1.3rem;">00:00</span>
+                                </div>
+                                <div class="growth-sub-label">次回成長予測 / Next Growth (Estimated)</div>
+                                <div id="homeGrowthPreview" class="growth-preview">
+                                    <span class="growth-tag">成長なし / No Growth</span>
+                                </div>
+                                <div class="session-growth-divider"></div>
+                                <div class="growth-sub-label">現在の累計成長 / Current Session Total</div>
+                                <div id="homeSessionGrowth" class="session-growth-box-mini">
+                                    <div class="session-growth-empty">累計成長なし / No growth yet</div>
+                                </div>
+                            </div>
+                        </div>
+
+
+
+                        <button id="btnNeutralReset" class="btn btn-secondary btn-full btn-neutral-reset"
+                            style="display:none;">
+                            🏠 無属性に戻す / Set Neutral
+                        </button>
+                    </div>
+                </div>
+
+                <!-- ENV TAB -->
+                <div id="tab-env" class="tab-pane">
+                    <div class="env-section">
+                        <div class="env-section-title">🌡️ 環境設定 / Environment Setup</div>
+
+                        <div class="slider-group">
+                            <div class="slider-label">
+                                <span class="slider-label-text">温度 / Temperature</span>
+                                <span id="tempValue" class="slider-value">0°C</span>
+                            </div>
+                            <input type="range" id="tempSlider" min="0" max="20" value="10" step="1">
+                        </div>
+
+                        <div class="slider-group">
+                            <div class="slider-label">
+                                <span class="slider-label-text">湿度 / Humidity</span>
+                                <span id="humValue" class="slider-value">50%</span>
+                            </div>
+                            <input type="range" id="humSlider" min="0" max="21" value="10" step="1">
+                        </div>
+
+                        <div class="slider-group">
+                            <div class="slider-label">
+                                <span id="lightLabel" class="slider-label-text">光量 / Light</span>
+                            </div>
+                            <div class="light-buttons">
+                                <button class="light-btn" data-val="0">0 (暗)</button>
+                                <button class="light-btn active" data-val="50">50</button>
+                                <button class="light-btn" data-val="100">100 (明)</button>
+                            </div>
+
+                        </div>
+
+                        <div class="slider-group">
+                            <div class="info-label">環境予測 / Prediction</div>
+                            <div id="envPreviewArea" class="info-value"
+                                style="font-size:1.1rem; font-weight:800; color:var(--text-accent);">無属性 / Neutral
+                            </div>
+                        </div>
+
+                        <div class="env-actions">
+                            <button id="btnResetEnv" class="btn btn-secondary" style="flex:1;">🔄 リセット</button>
+                            <button id="btnApplyEnv" class="btn btn-primary" style="flex:2;">⚡ 冒険に出発 / Apply</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- LEGENDZ TAB -->
+                <div id="tab-legendz" class="tab-pane">
+                    <div class="legendz-header">
+                        <div id="ldzSpritePreview" class="legendz-sprite-preview">
+                            <div id="growthAnimLdz" class="growth-anim-layer"></div>
+                        </div>
+                        <div class="legendz-meta">
+                            <div id="ldzSpecies" class="legendz-species">—</div>
+                            <div><span id="ldzAttrBadge" class="attr-badge neutral">—</span></div>
+                            <div class="legendz-nickname-row">
+                                <input type="text" id="ldzNicknameInput" placeholder="ニックネーム..." maxlength="20">
+                                <button id="btnNicknameApply" class="btn btn-sm btn-secondary">変更</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Stats -->
+                    <div class="stats-grid">
+                        <div class="stat-card full-width">
+                            <div class="stat-name">HP</div>
+                            <div id="ldzHP" class="stat-value">400 / 400</div>
+                            <div class="stat-bar-wrap">
+                                <div id="ldzHPBar" class="stat-bar hp" style="width:100%;"></div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-name">マホウ / Magic</div>
+                            <div id="ldzStat-magic" class="stat-value">60</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-name">カウンター / Counter</div>
+                            <div id="ldzStat-counter" class="stat-value">100</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-name">ダゲキ / Attack</div>
+                            <div id="ldzStat-attack" class="stat-value">60</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-name">カイフク / Recover</div>
+                            <div id="ldzStat-recover" class="stat-value">20</div>
+                        </div>
+                    </div>
+
+
+
+                    <!-- Skill Slots -->
+                    <div class="skills-section">
+                        <div class="skills-title">🗡️ スキル / Skills (15 slots)</div>
+                        <div id="ldzSkillSlots"></div>
+                    </div>
+                </div>
+
+                <!-- CRYSTAL TAB -->
+                <div id="tab-crystal" class="tab-pane">
+                    <div class="env-section-title" style="margin-bottom:12px;">💎 クリスタル / Crystals</div>
+                    <div id="crystalList" class="crystal-groups-container">
+                        <!-- Groups and Crystals will be injected here -->
+                        <div class="crystal-empty">クリスタルを所持していません<br>No crystals yet</div>
+                    </div>
+                </div>
+
             </div>
 
-            <div class="nick-edit nick-edit--top">
-              <label for="nicknameInput" style="color:var(--muted); font-size:13px;">
-                <span class="tsp-inline">
-                  <span class="jp">ニックネーム</span><span class="sep">/</span><span class="en">Nickname</span>
-                </span>
-              </label>
-              <input id="nicknameInput" type="text" autocomplete="off" />
-              <button id="nicknameApplyBtn" type="button" class="btn-dual">
-                <span class="jp">ニックネームを変更</span>
-                <span class="en">Update</span>
-              </button>
-            </div>
-          </div>
+            <!-- Tab Navigation -->
+            <nav class="tab-nav">
+                <button id="tabBtn-home" onclick="switchTab('home')" class="active">
+                    <div class="tab-icon">🏠</div>Home
+                </button>
+                <button id="tabBtn-env" onclick="switchTab('env')">
+                    <div class="tab-icon">🌍</div>Env
+                </button>
+                <button id="tabBtn-legendz" onclick="switchTab('legendz')">
+                    <div class="tab-icon">🐉</div>Legendz
+                </button>
+                <button id="tabBtn-crystal" onclick="switchTab('crystal')">
+                    <div class="tab-icon">💎</div>Crystal
+                </button>
+            </nav>
 
-          <div class="legendz-grid">
-            <div class="kvline">
-             <span>HP</span>
-              <strong id="hpStat">-</strong>
-            </div>
-            <div class="kvline">
-              <span class="tsp-inline"><span class="jp">マホウ</span><span class="sep">/</span><span class="en">Magic</span></span>
-              <strong id="magicStat">-</strong>
-            </div>
-            <div class="kvline">
-              <span class="tsp-inline"><span class="jp">カウンター</span><span class="sep">/</span><span class="en">Counter</span></span>
-              <strong id="counterStat">-</strong>
-            </div>
-            <div class="kvline">
-              <span class="tsp-inline"><span class="jp">ダゲキ</span><span class="sep">/</span><span class="en">Strike</span></span>
-              <strong id="strikeStat">-</strong>
-            </div>
-            <div class="kvline">
-              <span class="tsp-inline"><span class="jp">カイフク</span><span class="sep">/</span><span class="en">Heal</span></span>
-              <strong id="healStat">-</strong>
-            </div>
-          </div>
+        </div><!-- /mainView -->
 
-          <div class="skills">
-            <h3 style="margin:14px 0 8px;">
-              <span class="tsp-inline">
-                <span class="jp">ワザ</span><span class="sep">/</span><span class="en">Skills</span>
-              </span>
-            </h3>
-            <div id="skillSlots" class="skill-slots" aria-label="skill-slots"></div>
-          </div>
+    </div><!-- /app -->
+
+    <!-- ===== MODALS ===== -->
+
+    <!-- Notice Modal -->
+    <div id="noticeModal" class="modal-overlay">
+        <div class="modal">
+            <div id="noticeModalTitle" class="modal-title">お知らせ</div>
+            <div class="modal-body">
+                <p id="noticeModalMsg"></p>
+            </div>
+            <div class="modal-actions">
+                <button id="noticeModalOk" class="btn btn-primary btn-full">OK</button>
+            </div>
         </div>
-      </section>
-
-      <!-- ===== CRYSTAL ===== -->
-      <section id="tab-crystal" class="tab-content" aria-label="crystal">
-        <div class="panel">
-          <h2 style="margin:0 0 10px;">
-            <span class="tsp-inline">
-              <span class="jp">クリスタル</span><span class="sep">/</span><span class="en">Crystals</span>
-            </span>
-          </h2>
-          <div id="crystalList" class="crystal-box"></div>
-        </div>
-      </section>
-
     </div>
-  </main>
 
-  <!-- ===== Tabs ===== -->
-  <!-- ルール：タブは英単語のみ（＋絵文字はOK） -->
-  <nav class="tabs" aria-label="tabs">
-    <button class="tab-btn active" data-tab="home" type="button">
-      <div class="ico">🏠</div>
-      <div>Home</div>
-      <div class="dot"></div>
-    </button>
-    <button class="tab-btn" data-tab="environment" type="button">
-      <div class="ico">🌡️</div>
-      <div>Env</div>
-      <div class="dot"></div>
-    </button>
-    <button class="tab-btn" data-tab="legendz" type="button">
-      <div class="ico">🐉</div>
-      <div>Legendz</div>
-      <div class="dot"></div>
-    </button>
-    <button class="tab-btn" data-tab="crystal" type="button">
-      <div class="ico">💎</div>
-      <div>Crystal</div>
-      <div class="dot"></div>
-    </button>
-  </nav>
+    <!-- Confirm Modal -->
+    <div id="confirmModal" class="modal-overlay">
+        <div class="modal">
+            <div id="confirmModalTitle" class="modal-title">確認</div>
+            <div class="modal-body">
+                <p id="confirmModalMsg"></p>
+            </div>
+            <div class="modal-actions">
+                <button id="confirmYes" class="btn btn-primary" style="flex:1;">YES</button>
+                <button id="confirmNo" class="btn btn-secondary" style="flex:1;">NO</button>
+            </div>
+        </div>
+    </div>
 
-  <!-- ===== Scripts ===== -->
-  <script src="./js/state.js?v=079"></script>
-  <script src="./js/areaMap.js?v=079"></script>
-  <script src="./js/areaResolver.js?v=079"></script>
-  <script src="./js/game.js?v=079"></script>
-  <script src="./js/app.js?v=079"></script>
+    <!-- Comeback Modal -->
+    <div id="comebackModal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-title">💎 Soul Doll の記憶 / Soul Code</div>
+            <div id="comebackSaga" class="mb-8" style="font-size:0.8rem; color:var(--text-secondary);"></div>
+            <div class="modal-body">
+                <textarea id="comebackCode" readonly></textarea>
+            </div>
+            <div class="modal-actions-list">
+                <button id="btnComebackCopy" class="btn btn-primary btn-full">📋 コピー / Copy</button>
+                <button id="btnComebackReborn" class="btn btn-danger btn-full">🔄 Comeback</button>
+                <button id="btnComebackClose" class="btn btn-secondary btn-full">← 戻る / Back</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Crystal Action Modal -->
+    <div id="crystalActionModal" class="modal-overlay">
+        <div class="modal action-modal">
+            <div id="caTitle" class="modal-title">クリスタル名</div>
+            <div class="modal-body">
+                <div id="caDesc" class="mb-8" style="font-size:0.85rem; color:var(--text-secondary);">説明文...</div>
+                <div id="caEffect" class="mb-16" style="font-size:0.9rem; font-weight:700; color:var(--accent);">効果...
+                </div>
+            </div>
+            <div class="modal-actions-list">
+                <button id="btnCaView" class="btn btn-secondary btn-full">見る / View</button>
+                <button id="btnCaUse" class="btn btn-primary btn-full">使用する / Use</button>
+                <button id="btnCaLearn" class="btn btn-accent btn-full">覚える / Learn</button>
+                <button id="btnCaCancel" class="btn btn-secondary btn-full">キャンセル / Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Skill Slot Picker Modal -->
+    <div id="skillSlotPickerModal" class="modal-overlay">
+        <div class="modal picker-modal">
+            <div class="modal-title">スロットを選択 / Pick Slot</div>
+            <div class="modal-body" style="max-height: 50vh; overflow-y: auto;">
+                <p style="font-size:0.8rem; margin-bottom:12px; color:var(--text-secondary);">上書きするスキルスロットを選択してください。</p>
+                <div id="skillSlotList" class="slot-picker-grid"></div>
+            </div>
+            <div class="modal-actions mt-16">
+                <button id="btnSlotPickerCancel" class="btn btn-secondary btn-full">キャンセル / Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Legendz Preview Modal -->
+    <div id="ldzPreviewModal" class="modal-overlay">
+        <div id="ldzPreviewClose" class="modal-close-area"></div>
+        <div class="modal preview-modal">
+            <div id="ldzPreviewSprite" class="preview-sprite-large"></div>
+            <div id="ldzPreviewDesc" class="preview-desc"></div>
+            <div class="modal-actions mt-16">
+                <button id="btnLdzPreviewClose" class="btn btn-secondary btn-full">閉じる / Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Battle / Search Result Modal -->
+    <div id="battleModal" class="modal-overlay">
+        <div class="modal result-modal">
+            <div id="battleTitle" class="modal-title">Encounters!</div>
+            <div class="modal-body">
+                <div id="battleMsg" class="mb-16" style="font-size:0.9rem;"></div>
+            </div>
+            <div class="modal-actions">
+                <button id="btnBattleClose" class="btn btn-primary btn-full">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Adventure Overlay -->
+    <div id="adventureOverlay" class="adventure-overlay">
+        <div id="adventureTextJp" class="adventure-text">冒険先へ移動中...</div>
+        <div id="adventureTextEn" class="adventure-text" style="font-size:0.9rem;">Travelling to destination...</div>
+        <div class="adventure-dots">
+            <span></span><span></span><span></span>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <!-- ===== SCRIPTS (load order matters!) ===== -->
+    <script src="./js/state.js"></script>
+    <script src="./js/areaMap.js"></script>
+    <script src="./js/areaResolver.js"></script>
+    <script src="./data/LegendzData.js"></script>
+    <script src="./data/SkillData.js"></script>
+    <script src="./data/CrystalData.js"></script>
+    <script src="./js/spriteGen.js"></script>
+    <script src="./js/game.js"></script>
+    <script src="./js/app.js"></script>
+
 </body>
+
 </html>
-
-
