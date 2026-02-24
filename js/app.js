@@ -1,1352 +1,1365 @@
-// FILE: js/app.js
-/* =========================================================
- * TalisPod v0.79 (EN append tweaks)
- *
- * 反映（今回ぶん）
- * - ヘッダー
- *   - Line1: SagaName: ○○（英語のみ）
- *   - Line2: 種族名/Species：○○/△△（日本語/英語）
- *   - Line3: Nickname: ○○（英語のみ）
- * - Home
- *   - 無属性時：育成/Growth：環境成長なし/No Growth（2段）
- *   - 環境表示：日本語エリア名/英語エリア名（Good等は英語で括弧）
- * - Env
- *   - 光量/Light と 水深/Depth を切替（ラベル側）
- *   - 予想環境(Preview)の値：英語属性名のみ（例 Tornado）
- *   - 冒険中表示：冒険中.../Adventuring（英語は...無し・2段）
- * - Legendz
- *   - 種族名：○○/△△
- *   - 属性：英語のみ
- * - Comeback modal
- *   - 文言を指定どおりに差し替え
- *
- * 依存：
- * - window.TSP_STATE
- * - window.TSP_GAME
- * - window.TSP_AREAMAP / window.TSP_AREA
- * ========================================================= */
-
+/* ============================================================
+ *  app.js  –  UI control, events, rafLoop, effects
+ *  Depends on: TSP_STATE, TSP_AREAMAP, TSP_AREA, TSP_GAME,
+ *              TSP_LEGENDZ_DATA, TSP_SKILL_DATA, TSP_CRYSTAL_DATA
+ * ============================================================ */
 (function () {
-  "use strict";
+    "use strict";
 
-  const $ = (id) => document.getElementById(id);
-  const qsa = (sel) => Array.from(document.querySelectorAll(sel));
+    /* =========================================================
+     *  State
+     * ========================================================= */
+    var soul = null;
+    var activeTab = "home";
+    var uiLocked = false;
+    var lastRafMs = 0;
+    var secondsAccum = 0;
+    var minuteCounter = 0;  // total minutes elapsed
 
-  function must(id) {
-    const el = $(id);
-    if (!el) throw new Error(`DOM missing: #${id}`);
-    return el;
-  }
+    var envDraft = { temp: 0, hum: 50, light: 50 };
+    var envApplied = { temp: 0, hum: 50, light: 50 };
 
-  function safeText(s) {
-    return String(s ?? "").replace(/\s+/g, " ").trim();
-  }
+    var elemCounter = { magic: 0, counter: 0, attack: 0, recover: 0 };
+    var sessionGrowth = { hp: 0, magic: 0, counter: 0, attack: 0, recover: 0 };
 
-  // ===== lightweight UI notice (no native dialogs) =====
-  let noticeModal = null;
-  let toastEl = null;
-  let toastTimer = null;
+    var LS_KEY = "talis_pod_save";
+    var LS_SAGA_KEY = "talis_pod_saga_name";
 
-  function ensureToast() {
-    if (toastEl) return toastEl;
-    const el = document.createElement("div");
-    el.id = "tspToast";
-    el.style.position = "fixed";
-    el.style.left = "50%";
-    el.style.bottom = "calc(84px + env(safe-area-inset-bottom, 0px))";
-    el.style.transform = "translateX(-50%)";
-    el.style.zIndex = "120";
-    el.style.maxWidth = "92vw";
-    el.style.padding = "10px 12px";
-    el.style.borderRadius = "14px";
-    el.style.border = "1px solid rgba(255,255,255,0.14)";
-    el.style.background = "rgba(15,18,28,0.92)";
-    el.style.backdropFilter = "blur(10px)";
-    el.style.color = "rgba(255,255,255,0.92)";
-    el.style.fontSize = "13px";
-    el.style.lineHeight = "1.45";
-    el.style.boxShadow = "0 14px 28px rgba(0,0,0,0.35)";
-    el.style.display = "none";
-    el.style.whiteSpace = "pre-wrap";
-    document.body.appendChild(el);
-    toastEl = el;
-    return el;
-  }
-
-  function toast(msg, ms = 1400) {
-    try {
-      const el = ensureToast();
-      el.textContent = String(msg ?? "");
-      el.style.display = "block";
-      if (toastTimer) clearTimeout(toastTimer);
-      toastTimer = setTimeout(() => {
-        el.style.display = "none";
-      }, ms);
-    } catch {
-      console.error("toast failed", msg);
-    }
-  }
-
-  function ensureNoticeModal() {
-    if (noticeModal) return noticeModal;
-
-    const modal = document.createElement("div");
-    modal.className = "modal-backdrop";
-    modal.innerHTML = `
-      <div class="modal">
-        <div id="nzTitle" class="modal-title">Notice</div>
-        <div id="nzBody" style="color:var(--muted); font-size:13px; line-height:1.55; white-space:pre-wrap;"></div>
-        <div class="modal-actions" style="margin-top:12px;">
-          <button id="nzOkBtn">OK</button>
-        </div>
-      </div>
-    `;
-    document.body.appendChild(modal);
-
-    modal.addEventListener("click", (e) => {
-      if (e.target === modal) closeNotice();
-    });
-
-    noticeModal = modal;
-    $("nzOkBtn").onclick = () => closeNotice();
-
-    return noticeModal;
-  }
-
-  function openNotice(title, body) {
-    const m = ensureNoticeModal();
-    $("nzTitle").textContent = String(title ?? "Notice");
-    $("nzBody").textContent = String(body ?? "");
-    m.classList.add("active");
-  }
-
-  function closeNotice() {
-    if (!noticeModal) return;
-    noticeModal.classList.remove("active");
-  }
-
-  function showError(where, e) {
-    const msg = (e && (e.message || String(e))) || "unknown";
-    console.error(where, e);
-    openNotice("Error", `(${where})\n${msg}`);
-  }
-
-  function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-  // ===== Monster / sprite config =====
-  const MONSTER = {
-    id: "windragon",
-    spritePath: "./assets/sprites/windragon.png",
-    superBest: { temp: -45, hum: 5, waterDepth: 50 },
-  };
-
-  const SHEET = {
-    frameW: 24,
-    frameH: 32,
-    scale: 3,
-    frameToRC(i) {
-      const idx = Math.max(1, Math.min(8, i)) - 1;
-      return { r: Math.floor(idx / 4), c: idx % 4 };
-    }
-  };
-
-  const WALK = {
-    halfRangePx: 84,
-    speedPxPerSec: 12,
-    facing: "right",
-    x: 0,
-    stepTimer: 0,
-    stepFrame: 1,
-    turnTimer: 0
-  };
-
-  const IDLE = { timer: 0, frame: 1 };
-
-  // ===== Particle emit accumulators =====
-  const FX = {
-    superAcc: 0,
-    bestAcc: 0,
-    goodAcc: 0,
-    badAcc: 0
-  };
-
-  // ===== DOM refs =====
-  let startView, mainView;
-  let headerLine1, headerLine2, headerLine3;
-
-  let sagaInput, soulTextInput, newSoulBtn, textRebornBtn;
-
-  let tabBtns;
-  let tabEls;
-
-  let envAttributeLabel, growthTimer, growthPreview, comebackBtn;
-  let homeNeutralBtn;
-
-  let spriteMover, spriteViewport, spriteSheetLayer, spriteFxLayer;
-  let scene;
-
-  let tempSlider, humiditySlider;
-  let tempValue, humidityValue, lightValue, lightLabel;
-  let envPreviewLabel, neutralBtn, applyEnvBtn;
-
-  let lightBtn0, lightBtn50, lightBtn100;
-
-  let speciesName, nicknameInput, nicknameApplyBtn, legendzAttribute;
-  let hpStat, magicStat, counterStat, strikeStat, healStat;
-
-  let skillSlots;
-  let crystalList;
-
-  // ===== Modals =====
-  let comebackModal = null;
-  let confirmModal = null;
-
-  // ===== State =====
-  let soul = null;
-  let envDraft = { temp: 0, hum: 50, light: 50 };
-  let envApplied = { temp: 0, hum: 50, light: 50 };
-  const elemCounter = { fire: 0, wind: 0, earth: 0, water: 0 };
-
-  let secondsAccum = 0;
-  let lastRafMs = null;
-  let uiLocked = false;
-
-  // ===== Skills event guard =====
-  let skillsClickBound = false;
-
-  // FX state tracking
-  let lastRankKey = null;
-
-  // ===== EN maps (今の実装エリア名に合わせて) =====
-  const AREA_EN_MAP = Object.freeze({
-    V1: "volcano",
-    V2: "desert",
-    V3: "arid zone",
-    V4: "broadleaf forest",
-
-    T1: "stratosphere",
-    T2: "mountain region",
-    T3: "plateau",
-    T4: "conifer forest",
-
-    E1: "underground",
-    E2: "tropical rainforest",
-    E3: "tropics",
-    E4: "temperate grassland",
-
-    S1: "absolute zero",
-    S2: "polar region",
-    S3: "subarctic",
-    S4: "cold steppe",
-
-    SS_SHALLOW: "south sea (shallow)",
-    SS_MID: "south sea (mid)",
-    SS_DEEP: "south sea (deep)",
-
-    SN_SHALLOW: "north sea (shallow)",
-    SN_MID: "north sea (mid)",
-    SN_DEEP: "north sea (deep)",
-  });
-
-  const SPECIES_EN_MAP = Object.freeze({
-    windragon: "Windragon",
-  });
-
-  function getAreaEnName(areaId) {
-    if (!areaId || areaId === "NEUTRAL") return null;
-    return AREA_EN_MAP[areaId] || null;
-  }
-
-  function getSpeciesEnName(s) {
-    const id = safeText(s && s.speciesId);
-    return SPECIES_EN_MAP[id] || "";
-  }
-
-  function lockUI(on) {
-    uiLocked = on;
-    if (tabBtns) tabBtns.forEach(b => (b.disabled = on));
-    if (applyEnvBtn) applyEnvBtn.disabled = on;
-    if (neutralBtn) neutralBtn.disabled = on;
-    if (homeNeutralBtn) homeNeutralBtn.disabled = on;
-  }
-
-  function setUnrebornFlag(isUnreborn) {
-    document.body.classList.toggle("unreborn", !!isUnreborn);
-  }
-
-  // ===== View / Tab =====
-  function show(view) {
-    startView.classList.remove("active");
-    mainView.classList.remove("active");
-    view.classList.add("active");
-    setUnrebornFlag(view === startView);
-  }
-
-  function activeTabKey() {
-    const btn = tabBtns.find(b => b.classList.contains("active"));
-    return (btn && btn.dataset) ? (btn.dataset.tab || "home") : "home";
-  }
-
-  function switchTab(key) {
-    tabBtns.forEach(b => b.classList.toggle("active", b.dataset.tab === key));
-    Object.values(tabEls).forEach(el => el.classList.remove("active"));
-    tabEls[key].classList.add("active");
-  }
-
-  // ===== Header =====
-  function displayNickname(s) {
-    const n = safeText(s && s.nickname);
-    return n ? n : "Unregistered";
-  }
-
-  function setHeader() {
-    if (!soul) {
-      headerLine1.textContent = "";
-      headerLine2.textContent = "";
-      headerLine3.textContent = "Not reborn";
-      return;
+    /* Current monster reference (from LegendzData) */
+    function getMonster() {
+        if (!soul) return null;
+        var ld = window.TSP_LEGENDZ_DATA && window.TSP_LEGENDZ_DATA[soul.speciesId];
+        return ld || {
+            id: soul.speciesId,
+            spritePath: "./assets/sprites/windragon.png",
+            superBest: { temp: -45, hum: 5, waterDepth: 50 },
+            bestAreaId: "T2"
+        };
     }
 
-    const saga = safeText(soul.sagaName);
-    const spJp = safeText(soul.speciesName);
-    const spEn = safeText(getSpeciesEnName(soul));
-    const nick = displayNickname(soul);
-
-    headerLine1.textContent = `SagaName: ${saga}`;
-    headerLine2.textContent = `種族名/Species：${spJp}${spEn ? "/" + spEn : ""}`;
-    headerLine3.textContent = `Nickname: ${nick}`;
-  }
-
-  function rankEn(rank) {
-    const R = window.TSP_GAME.Rank;
-    switch (rank) {
-      case R.superbest: return "SuperBest";
-      case R.best: return "Best";
-      case R.good: return "Good";
-      case R.normal: return "Normal";
-      case R.bad: return "Bad";
-      default: return "Neutral";
-    }
-  }
-
-  function attrEnFromGame(envAttr) {
-    const meta = window.TSP_GAME && window.TSP_GAME.ATTR_META;
-    if (!meta) return "";
-    const m = meta[envAttr] || meta.neutral;
-    return safeText(m && m.en);
-  }
-
-  // ===== Home background (existing) =====
-  function setHomeBackgroundByEnvAttr(envAttr) {
-    if (!scene) return;
-    scene.classList.remove("attr-none", "attr-volcano", "attr-tornado", "attr-earthquake", "attr-storm");
-    switch (String(envAttr || "")) {
-      case "volcano": scene.classList.add("attr-volcano"); break;
-      case "tornado": scene.classList.add("attr-tornado"); break;
-      case "earthquake": scene.classList.add("attr-earthquake"); break;
-      case "storm": scene.classList.add("attr-storm"); break;
-      default: scene.classList.add("attr-none");
-    }
-  }
-
-  // ===== Stats UI =====
-  function refreshStatsUI() {
-    if (!soul) return;
-
-    // Species: JP/EN
-    const spJp = safeText(soul.speciesName);
-    const spEn = safeText(getSpeciesEnName(soul));
-    speciesName.textContent = spEn ? `${spJp}/${spEn}` : spJp;
-
-    // Attribute: EN only
-    legendzAttribute.textContent = String(soul.attribute ? attrEnFromGame(soul.attribute) : "");
-
-    nicknameInput.value = soul.nickname || "";
-
-    const mx = window.TSP_GAME.maxHP(soul);
-    hpStat.textContent = `${soul.currentHP}/${mx}`;
-
-    magicStat.textContent = String(soul.baseStats.fire + soul.growStats.fire);
-    counterStat.textContent = String(soul.baseStats.wind + soul.growStats.wind);
-    strikeStat.textContent = String(soul.baseStats.earth + soul.growStats.earth);
-    healStat.textContent = String(soul.baseStats.water + soul.growStats.water);
-  }
-
-  function refreshCrystalsUI() {
-    if (!soul) return;
-    const c = soul.crystals || {};
-    crystalList.innerHTML = `
-      <div>Volcano：${c.volcano || 0}</div>
-      <div>Tornado：${c.tornado || 0}</div>
-      <div>Earthquake：${c.earthquake || 0}</div>
-      <div>Storm：${c.storm || 0}</div>
-    `;
-  }
-
-  // ===== Skills (dummy) =====
-  const DUMMY_SKILLS = Array.from({ length: 15 }, (_, i) => ({
-    id: `skill_${i + 1}`,
-    name: `Skill ${String(i + 1).padStart(2, "0")}`,
-    meta: (i % 3 === 0) ? "Attack" : (i % 3 === 1 ? "Support" : "Recover"),
-  }));
-
-  function renderSkillsUI() {
-    if (!skillSlots) return;
-    skillSlots.innerHTML = "";
-    DUMMY_SKILLS.forEach((sk, idx) => {
-      const row = document.createElement("div");
-      row.className = "skill-slot";
-      row.innerHTML = `
-        <div class="left">
-          <div class="name">${sk.name}</div>
-          <div class="meta">${sk.meta} / Slot ${idx + 1}</div>
-        </div>
-        <button type="button" class="try-btn" data-skill="${sk.id}">Try</button>
-      `;
-      skillSlots.appendChild(row);
-    });
-  }
-
-  function bindSkillsClickOnce() {
-    if (!skillSlots || skillsClickBound) return;
-    skillsClickBound = true;
-
-    skillSlots.addEventListener("click", (e) => {
-      const btn = e.target && e.target.closest && e.target.closest(".try-btn");
-      if (!btn) return;
-
-      const id = btn.getAttribute("data-skill");
-      const sk = DUMMY_SKILLS.find(s => s.id === id);
-      if (!sk) return;
-
-      openNotice("Try", `${sk.name}`);
-    });
-  }
-
-  // ===== Env sliders =====
-  function initSliders() {
-    tempSlider.min = "0";
-    tempSlider.max = String(window.TSP_GAME.TEMP_STEPS.length - 1);
-    tempSlider.step = "1";
-
-    humiditySlider.min = "0";
-    humiditySlider.max = String(window.TSP_GAME.HUM_STEPS.length - 1);
-    humiditySlider.step = "1";
-  }
-
-  function setLightDraft(value) {
-    envDraft.light = value;
-    lightValue.textContent = String(value);
-
-    [lightBtn0, lightBtn50, lightBtn100].forEach(b => b.classList.remove("active"));
-    if (value === 0) lightBtn0.classList.add("active");
-    else if (value === 50) lightBtn50.classList.add("active");
-    else lightBtn100.classList.add("active");
-  }
-
-  function readDraftFromSlidersOnly() {
-    const t = window.TSP_GAME.TEMP_STEPS[Number(tempSlider.value)] ?? 0;
-    const h = window.TSP_GAME.HUM_STEPS[Number(humiditySlider.value)] ?? 50;
-    envDraft.temp = t;
-    envDraft.hum = h;
-  }
-
-  function setSlidersFromDraft() {
-    const tIdx = window.TSP_GAME.TEMP_STEPS.indexOf(Number(envDraft.temp));
-    const hIdx = window.TSP_GAME.HUM_STEPS.indexOf(Number(envDraft.hum));
-    tempSlider.value = String(Math.max(0, tIdx));
-    humiditySlider.value = String(Math.max(0, hIdx));
-  }
-
-  function updateLightLabelByHumidity() {
-    const isSea = (Number(envDraft.hum) === 100);
-    lightLabel.textContent = isSea ? "水深" : "光量";
-
-    // HTML側の small-en を切替（存在すれば）
-    const wrap = lightLabel && lightLabel.parentElement;
-    const small = wrap ? wrap.querySelector(".small-en") : null;
-    if (small) small.textContent = isSea ? " / Depth" : " / Light";
-  }
-
-  function refreshEnvUI() {
-    tempValue.textContent = `${envDraft.temp}℃`;
-    humidityValue.textContent = `${envDraft.hum}％`;
-    updateLightLabelByHumidity();
-
-    // Preview：英語属性のみ（Neutralなら Neutral）
-    const attr = window.TSP_GAME.envAttribute(envDraft.temp, envDraft.hum, envDraft.light);
-    envPreviewLabel.textContent = (attr === "neutral") ? "Neutral" : attrEnFromGame(attr);
-  }
-
-  // ===== Adventure apply (center overlay) =====
-  function ensureAdventureOverlay() {
-    let el = $("tspAdventureOverlay");
-    if (el) return el;
-
-    el = document.createElement("div");
-    el.id = "tspAdventureOverlay";
-    el.style.position = "fixed";
-    el.style.left = "50%";
-    el.style.top = "50%";
-    el.style.transform = "translate(-50%,-50%)";
-    el.style.zIndex = "200";
-    el.style.padding = "14px 16px";
-    el.style.borderRadius = "16px";
-    el.style.border = "1px solid rgba(255,255,255,0.14)";
-    el.style.background = "rgba(15,18,28,0.92)";
-    el.style.backdropFilter = "blur(10px)";
-    el.style.boxShadow = "0 18px 34px rgba(0,0,0,0.45)";
-    el.style.display = "none";
-    el.style.textAlign = "center";
-    el.style.whiteSpace = "pre";
-    document.body.appendChild(el);
-    return el;
-  }
-
-  async function playAdventureAndApply() {
-    if (uiLocked) return;
-
-    lockUI(true);
-
-    const overlay = ensureAdventureOverlay();
-    overlay.textContent = "冒険中...\nAdventuring";
-    overlay.style.display = "block";
-
-    await sleep(3000);
-
-    overlay.style.display = "none";
-
-    envApplied = { ...envDraft };
-    secondsAccum = 0;
-
-    switchTab("home");
-    lockUI(false);
-
-    updateGrowthPreviewAndTimer();
-    renderByCurrentEnv(0);
-  }
-
-  // =========================================================
-  // Sprite / Rendering
-  // =========================================================
-  function setSpriteSheet() {
-    spriteSheetLayer.style.backgroundImage = `url("${MONSTER.spritePath}")`;
-    spriteSheetLayer.style.transform = "";
-    spriteMover.style.transform = "translateX(0px)";
-    spriteViewport.style.transform = "scaleX(1)";
-  }
-
-  function setFacing(direction) {
-    spriteViewport.style.transform = (direction === "right") ? "scaleX(-1)" : "scaleX(1)";
-  }
-
-  function applyMoveX(xPx) {
-    spriteMover.style.transform = `translateX(${xPx}px)`;
-  }
-
-  function renderFrame(frameIndex) {
-    const rc = SHEET.frameToRC(frameIndex);
-    const x = -(rc.c * SHEET.frameW * SHEET.scale);
-    const y = -(rc.r * SHEET.frameH * SHEET.scale);
-    spriteSheetLayer.style.backgroundPosition = `${x}px ${y}px`;
-  }
-
-  // ===== FX helpers =====
-  function clearSceneFxClasses() {
-    if (!scene) return;
-    scene.classList.remove("fx-superbest", "fx-best", "fx-good", "fx-bad");
-  }
-
-  function removeParticles() {
-    if (!scene) return;
-    qsa(".tsp-particle, .tsp-darkfall").forEach(p => p.remove());
-  }
-
-  function clearFxAllHard() {
-    spriteFxLayer.innerHTML = "";
-    clearSceneFxClasses();
-    removeParticles();
-  }
-
-  function rand(min, max) {
-    return min + Math.random() * (max - min);
-  }
-
-  function spawnParticle({ text, xPct, yPct, cls, dur, dx, dy, rot, scale, sizePx }) {
-    if (!scene) return;
-
-    const p = document.createElement("div");
-    p.className = cls;
-    p.textContent = text;
-    p.style.left = `${xPct}%`;
-    p.style.top = `${yPct}%`;
-
-    if (cls.indexOf("tsp-particle") >= 0) {
-      p.style.setProperty("--tspDur", `${dur}s`);
-      p.style.setProperty("--tspDX", `${dx}px`);
-      p.style.setProperty("--tspDY", `${dy}px`);
-      p.style.setProperty("--tspR", `${rot}deg`);
-      p.style.setProperty("--tspS", `${scale}`);
-      p.style.fontSize = `${sizePx}px`;
-    } else {
-      // darkfall
-      p.style.setProperty("--tspDur", `${dur}s`);
-      p.style.setProperty("--tspDX", `${dx}px`);
-      p.style.setProperty("--tspDY", `${dy}px`);
-      p.style.fontSize = `${sizePx}px`;
-    }
-
-    scene.appendChild(p);
-
-    const rmMs = Math.max(900, dur * 1000 + 240);
-    setTimeout(() => { try { p.remove(); } catch {} }, rmMs);
-  }
-
-  // 超ベスト：飛び交う（♪✨混在）
-  function emitSuperbest(dtSec) {
-    if (!scene) return;
-    scene.classList.add("fx-superbest");
-
-    FX.superAcc += dtSec;
-    const interval = 0.06;
-    while (FX.superAcc >= interval) {
-      FX.superAcc -= interval;
-      const count = 6;
-
-      for (let i = 0; i < count; i++) {
-        const isSpark = Math.random() > 0.52;
-        const text = isSpark ? "✨" : "♪";
-
-        const xPct = rand(2, 98);
-        const yPct = rand(2, 98);
-
-        const dx = rand(-140, 140);
-        const dy = rand(-220, 80);
-        const rot = rand(-30, 30);
-        const dur = rand(1.0, 1.9);
-        const scale = rand(0.9, 1.35);
-        const sizePx = isSpark ? rand(16, 24) : rand(14, 22);
-
-        spawnParticle({
-          text, xPct, yPct,
-          cls: "tsp-particle tsp-fly",
-          dur, dx, dy, rot, scale, sizePx
-        });
-      }
-    }
-  }
-
-  // ベスト：♪が降り注ぐ
-  function emitBest(dtSec) {
-    if (!scene) return;
-    scene.classList.add("fx-best");
-
-    FX.bestAcc += dtSec;
-    const interval = 0.12;
-    while (FX.bestAcc >= interval) {
-      FX.bestAcc -= interval;
-      const count = 4;
-
-      for (let i = 0; i < count; i++) {
-        const isSpark = Math.random() > 0.86;
-        const text = isSpark ? "✨" : "♪";
-
-        const xPct = rand(4, 96);
-        const yPct = rand(-8, 6);
-        const dx = rand(-22, 22);
-        const dy = rand(220, 340);
-        const rot = rand(-12, 12);
-        const dur = rand(1.4, 2.2);
-        const scale = rand(0.9, 1.2);
-        const sizePx = isSpark ? rand(16, 22) : rand(14, 20);
-
-        spawnParticle({
-          text, xPct, yPct,
-          cls: "tsp-particle tsp-fall",
-          dur, dx, dy, rot, scale, sizePx
-        });
-      }
-    }
-  }
-
-  // 良好：♪がパラパラ
-  function emitGood(dtSec) {
-    if (!scene) return;
-    scene.classList.add("fx-good");
-
-    FX.goodAcc += dtSec;
-    const interval = 0.45;
-    while (FX.goodAcc >= interval) {
-      FX.goodAcc -= interval;
-      const count = 1 + (Math.random() > 0.7 ? 1 : 0);
-
-      for (let i = 0; i < count; i++) {
-        const text = "♪";
-        const xPct = rand(8, 92);
-        const yPct = rand(-6, 10);
-        const dur = rand(1.8, 2.6);
-        const dx = rand(-14, 14);
-        const dy = rand(160, 240);
-        const rot = rand(-14, 14);
-        const scale = rand(0.9, 1.15);
-        const sizePx = rand(13, 18);
-
-        spawnParticle({
-          text, xPct, yPct,
-          cls: "tsp-particle tsp-drift",
-          dur, dx, dy, rot, scale, sizePx
-        });
-      }
-    }
-  }
-
-  // 最悪：暗い絵文字をパラパラ（良好と同じノリで）
-  function emitBadDarkfall(dtSec) {
-    if (!scene) return;
-    scene.classList.add("fx-bad");
-
-    FX.badAcc += dtSec;
-    const interval = 0.38;
-    while (FX.badAcc >= interval) {
-      FX.badAcc -= interval;
-
-      const texts = ["🌑", "☁️", "🕳️"];
-      const text = texts[Math.floor(Math.random() * texts.length)];
-
-      const xPct = rand(6, 94);
-      const yPct = rand(-10, 6);
-      const dur = rand(1.8, 2.6);
-      const dx = rand(-16, 16);
-      const dy = rand(180, 260);
-      const sizePx = rand(14, 20);
-
-      spawnParticle({
-        text, xPct, yPct,
-        cls: "tsp-darkfall",
-        dur, dx, dy,
-        rot: 0, scale: 1, sizePx
-      });
-    }
-  }
-
-  function centerSprite() {
-    WALK.x = 0;
-    applyMoveX(0);
-  }
-
-  function tickIdle(dtSec) {
-    IDLE.timer += dtSec;
-    if (IDLE.timer >= 0.5) {
-      IDLE.timer -= 0.5;
-      IDLE.frame = (IDLE.frame === 1) ? 2 : 1;
-    }
-  }
-
-  function tickWalk(dtSec) {
-    if (WALK.turnTimer > 0) {
-      WALK.turnTimer -= dtSec;
-      setFacing(WALK.facing);
-      renderFrame(3);
-      applyMoveX(WALK.x);
-      return;
-    }
-
-    const dir = (WALK.facing === "right") ? 1 : -1;
-    WALK.x += WALK.speedPxPerSec * dtSec * dir;
-
-    if (WALK.x > WALK.halfRangePx) {
-      WALK.x = WALK.halfRangePx;
-      WALK.facing = "left";
-      WALK.turnTimer = 0.5;
-      WALK.stepTimer = 0;
-    } else if (WALK.x < -WALK.halfRangePx) {
-      WALK.x = -WALK.halfRangePx;
-      WALK.facing = "right";
-      WALK.turnTimer = 0.5;
-      WALK.stepTimer = 0;
-    }
-
-    WALK.stepTimer += dtSec;
-    if (WALK.stepTimer >= 0.5) {
-      WALK.stepTimer -= 0.5;
-      WALK.stepFrame = (WALK.stepFrame === 1) ? 2 : 1;
-    }
-
-    setFacing(WALK.facing);
-    renderFrame(WALK.stepFrame);
-    applyMoveX(WALK.x);
-  }
-
-  function updateHomeNeutralButtonVisibility(rankInfo) {
-    if (!homeNeutralBtn) return;
-    const R = window.TSP_GAME.Rank;
-    const showIt = (rankInfo && rankInfo.rank !== R.neutral);
-    homeNeutralBtn.style.display = showIt ? "block" : "none";
-  }
-
-  function makeRankKey(info) {
-    return `${String(info.rank)}|${String(info.envAttr)}|${String(info.areaId)}`;
-  }
-
-  function onRankChanged(newKey) {
-    clearFxAllHard();
-    FX.superAcc = 0;
-    FX.bestAcc = 0;
-    FX.goodAcc = 0;
-    FX.badAcc = 0;
-    lastRankKey = newKey;
-  }
-
-  function renderByCurrentEnv(dtSec) {
-    if (!soul) return;
-
-    const now = new Date();
-    const info = window.TSP_GAME.computeRank(MONSTER, envApplied, now, soul.attribute);
-    const R = window.TSP_GAME.Rank;
-
-    // Home: 環境表示＝日本語エリア名/英語エリア名（英語相性）
-    if (info.rank === R.neutral) {
-      envAttributeLabel.textContent = "無属性";
-    } else {
-      const jp = safeText(info.areaName || "");
-      const en = safeText(info.areaEnName || getAreaEnName(info.areaId) || "");
-      const rel = rankEn(info.rank);
-      if (jp && en) envAttributeLabel.textContent = `${jp}/${en}（${rel}）`;
-      else if (jp) envAttributeLabel.textContent = `${jp}（${rel}）`;
-      else envAttributeLabel.textContent = `${rel}`;
-    }
-
-    setHomeBackgroundByEnvAttr(info.envAttr);
-
-    const key = makeRankKey(info);
-    if (key !== lastRankKey) onRankChanged(key);
-
-    updateHomeNeutralButtonVisibility(info);
-
-    // ランク別 表情・演出
-    switch (info.rank) {
-      case R.superbest:
-        setFacing("left");
-        renderFrame(7);
-        emitSuperbest(dtSec);
-        centerSprite();
-        break;
-
-      case R.best:
-        setFacing("left");
-        renderFrame(7);
-        emitBest(dtSec);
-        centerSprite();
-        break;
-
-      case R.good:
-        tickIdle(dtSec);
-        setFacing("left");
-        renderFrame(IDLE.frame);
-        emitGood(dtSec);
-        centerSprite();
-        break;
-
-      case R.normal:
-        tickIdle(dtSec);
-        setFacing("left");
-        renderFrame(IDLE.frame);
-        centerSprite();
-        break;
-
-      case R.bad:
-        setFacing("left");
-        renderFrame(8);
-        emitBadDarkfall(dtSec);
-        centerSprite();
-        break;
-
-      case R.neutral:
-      default:
-        tickWalk(dtSec);
-        break;
-    }
-  }
-
-  // ===== Growth preview / timer =====
-  function setGrowthTimerNeutral() {
-    // 「環境成長なし/No Growth」2段
-    growthTimer.textContent = "環境成長なし/No Growth";
-  }
-
-  function updateGrowthPreviewAndTimer() {
-    if (!soul) return;
-
-    const now = new Date();
-    const info = window.TSP_GAME.computeMinutePreview(soul, MONSTER, envApplied, now, elemCounter);
-
-    if (info.rank === window.TSP_GAME.Rank.neutral) {
-      setGrowthTimerNeutral();
-      growthPreview.textContent = "";
-      return;
-    }
-
-    const sec = Math.max(0, Math.floor(60 - secondsAccum));
-    const mm = String(Math.floor(sec / 60)).padStart(2, "0");
-    const ss = String(sec % 60).padStart(2, "0");
-    growthTimer.textContent = `${mm}:${ss}`;
-
-    const parts = [];
-    if (info.heal > 0) parts.push(`Recover+${info.heal}`);
-    if (info.hpDmg > 0) parts.push(`HP-${info.hpDmg}`);
-    parts.push(`HP+${info.hpGrow}`);
-
-    if (info.elemKey) {
-      const en = { fire: "Magic", wind: "Counter", earth: "Attack", water: "Recover" }[info.elemKey];
-      parts.push(`${en}+${info.elemGrow}`);
-    }
-
-    growthPreview.textContent = parts.join(" / ");
-  }
-
-  // ===== Comeback modal =====
-  let comebackModalBound = false;
-
-  function ensureComebackModal() {
-    if (comebackModal) return comebackModal;
-
-    const modal = document.createElement("div");
-    modal.className = "modal-backdrop";
-    modal.innerHTML = `
-      <div class="modal">
-        <div class="modal-title">ソウルドールの記憶/Soul doll Memory</div>
-        <textarea id="cbCodeArea" class="modal-code" readonly></textarea>
-        <div class="modal-actions">
-          <button id="cbCopyBtn">コピー（Copy）</button>
-          <button id="cbRebornBtn">カムバック（Comeback）</button>
-          <button id="cbCloseBtn">閉じる（Close）</button>
-        </div>
-      </div>
-    `;
-    document.body.appendChild(modal);
-
-    modal.addEventListener("click", (e) => {
-      if (e.target === modal) closeComebackModal();
-    });
-
-    comebackModal = modal;
-    return modal;
-  }
-
-  function openComebackModal(code) {
-    const m = ensureComebackModal();
-    const area = $("cbCodeArea");
-    area.value = code;
-
-    if (!comebackModalBound) {
-      comebackModalBound = true;
-
-      $("cbCopyBtn").onclick = async () => {
-        try {
-          if (navigator.clipboard && navigator.clipboard.writeText) {
-            await navigator.clipboard.writeText(area.value);
-            toast("Copied");
-          } else {
-            area.focus();
-            area.select();
-            openNotice("Copy", "Auto-copy is not supported.\nPlease copy manually.");
-          }
-        } catch (e) {
-          showError("copy", e);
-        }
-      };
-
-      $("cbRebornBtn").onclick = () => {
-        try {
-          closeComebackModal();
-          soul = null;
-          setHeader();
-          show(startView);
-        } catch (e) {
-          showError("cbRebornBtn", e);
-        }
-      };
-
-      $("cbCloseBtn").onclick = () => closeComebackModal();
-    }
-
-    m.classList.add("active");
-  }
-
-  function closeComebackModal() {
-    if (!comebackModal) return;
-    comebackModal.classList.remove("active");
-  }
-
-  function doComeback() {
-    if (!soul) return;
-    const code = window.TSP_STATE.makeSoulCode(soul);
-    openComebackModal(code);
-  }
-
-  // ===== Confirm modal (ムゾクセイ？ only) =====
-  function ensureConfirmModal() {
-    if (confirmModal) return confirmModal;
-
-    const modal = document.createElement("div");
-    modal.className = "modal-backdrop";
-    modal.innerHTML = `
-      <div class="modal">
-        <div class="modal-title">Neutral?</div>
-        <div class="modal-actions" style="margin-top:12px;">
-          <button id="cfYesBtn">Yes</button>
-          <button id="cfNoBtn" class="ghost">No</button>
-        </div>
-      </div>
-    `;
-    document.body.appendChild(modal);
-
-    modal.addEventListener("click", (e) => {
-      if (e.target === modal) closeConfirmModal();
-    });
-
-    confirmModal = modal;
-    return modal;
-  }
-
-  function openConfirmModal(onYes) {
-    const m = ensureConfirmModal();
-
-    $("cfYesBtn").onclick = () => {
-      try {
-        closeConfirmModal();
-        onYes && onYes();
-      } catch (e) { showError("confirmYes", e); }
-    };
-    $("cfNoBtn").onclick = () => closeConfirmModal();
-
-    m.classList.add("active");
-  }
-
-  function closeConfirmModal() {
-    if (!confirmModal) return;
-    confirmModal.classList.remove("active");
-  }
-
-  // ===== Loop =====
-  function rafLoop(msNow) {
-    if (lastRafMs == null) lastRafMs = msNow;
-    const dtSec = Math.min(0.05, (msNow - lastRafMs) / 1000);
-    lastRafMs = msNow;
-
-    const tab = activeTabKey();
-
-    if (soul && tab === "home") {
-      secondsAccum += dtSec;
-
-      if (secondsAccum >= 60) {
-        secondsAccum -= 60;
-        try {
-          window.TSP_GAME.applyOneMinute(soul, MONSTER, envApplied, new Date(), elemCounter);
-          refreshStatsUI();
-        } catch (e) {
-          showError("applyOneMinute", e);
-        }
-      }
-
-      try {
-        updateGrowthPreviewAndTimer();
-        renderByCurrentEnv(dtSec);
-      } catch (e) {
-        showError("homeTickRender", e);
-      }
-    }
-
-    requestAnimationFrame(rafLoop);
-  }
-
-  // ===== Neutral resets =====
-  function resetToNeutralEnvApplied() {
-    envApplied = { temp: 0, hum: 50, light: 50 };
-    secondsAccum = 0;
-    lastRankKey = null;
-
-    updateGrowthPreviewAndTimer();
-    renderByCurrentEnv(0);
-  }
-
-  function resetToNeutralEnvDraft() {
-    envDraft = { temp: 0, hum: 50, light: 50 };
-    setSlidersFromDraft();
-    setLightDraft(50);
-    refreshEnvUI();
-  }
-
-  // ===== Reborn pipeline =====
-  function pipelineAfterReborn() {
-    envDraft = { temp: 0, hum: 50, light: 50 };
-    envApplied = { ...envDraft };
-    secondsAccum = 0;
-
-    setSlidersFromDraft();
-    setLightDraft(50);
-    refreshEnvUI();
-
-    setSpriteSheet();
-    lastRafMs = null;
-
-    WALK.x = 0; WALK.facing = "right"; WALK.stepTimer = 0; WALK.stepFrame = 1; WALK.turnTimer = 0;
-    IDLE.timer = 0; IDLE.frame = 1;
-
-    FX.superAcc = 0;
-    FX.bestAcc = 0;
-    FX.goodAcc = 0;
-    FX.badAcc = 0;
-
-    lastRankKey = null;
-
-    setHeader();
-    refreshStatsUI();
-    refreshCrystalsUI();
-
-    renderSkillsUI();
-    bindSkillsClickOnce();
-
-    show(mainView);
-    switchTab("home");
-
-    updateGrowthPreviewAndTimer();
-    renderByCurrentEnv(0);
-  }
-
-  // ===== Bind events =====
-  function bindEvents() {
-    tabBtns.forEach((btn) => {
-      btn.addEventListener("click", () => {
-        if (uiLocked) return;
-        try {
-          switchTab(btn.dataset.tab);
-
-          if (btn.dataset.tab === "home") {
-            updateGrowthPreviewAndTimer();
-            renderByCurrentEnv(0);
-          }
-        } catch (e) {
-          showError("tabSwitch", e);
-        }
-      });
-    });
-
-    newSoulBtn.addEventListener("click", () => {
-      try {
-        const saga = safeText(sagaInput.value);
-        if (!saga) return openNotice("Input", "Enter SagaName");
-        soul = window.TSP_STATE.newSoulWindragon(saga);
-        pipelineAfterReborn();
-      } catch (e) {
-        showError("newReborn", e);
-      }
-    });
-
-    textRebornBtn.addEventListener("click", () => {
-      try {
-        const saga = safeText(sagaInput.value);
-        if (!saga) return openNotice("Input", "Enter SagaName");
-
-        const code = safeText(soulTextInput.value);
-        if (!code) return openNotice(
-  "記憶が空です",
-  "Memory Empty"
-);
-
-
-        const parsed = window.TSP_STATE.parseSoulCode(code);
-        window.TSP_STATE.assertSagaMatch(parsed, saga);
-
-        soul = parsed;
-        pipelineAfterReborn();
-      } catch (e) {
-        showError("memoryReborn", e);
-      }
-    });
-
-    comebackBtn.addEventListener("click", () => {
-      try { doComeback(); }
-      catch (e) { showError("comeback", e); }
-    });
-
-    if (homeNeutralBtn) {
-      homeNeutralBtn.addEventListener("click", () => {
-        try {
-          if (!soul) return;
-          openConfirmModal(() => {
-            resetToNeutralEnvApplied();
-            resetToNeutralEnvDraft();
-            toast("Neutral");
-          });
-        } catch (e) {
-          showError("homeNeutralBtn", e);
-        }
-      });
-    }
-
-    nicknameApplyBtn.addEventListener("click", () => {
-      try {
+    /* =========================================================
+     *  DOM Refs
+     * ========================================================= */
+    var $ = function (id) { return document.getElementById(id); };
+
+    /* =========================================================
+     *  LocalStorage (v0.8)
+     * ========================================================= */
+    function saveGame() {
         if (!soul) return;
-        soul.nickname = safeText(nicknameInput.value);
-        setHeader();
-        toast("Updated");
-      } catch (e) {
-        showError("nicknameApply", e);
-      }
-    });
-
-    const onEnvInput = () => {
-      try {
-        readDraftFromSlidersOnly();
-        refreshEnvUI();
-      } catch (e) {
-        showError("envInput", e);
-      }
-    };
-    tempSlider.addEventListener("input", onEnvInput);
-    humiditySlider.addEventListener("input", onEnvInput);
-
-    neutralBtn.addEventListener("click", () => {
-      try {
-        resetToNeutralEnvDraft();
-        toast("Reset");
-      } catch (e) { showError("neutralBtn", e); }
-    });
-
-    const bindLightBtn = (btn, val) => {
-      btn.addEventListener("click", () => {
         try {
-          setLightDraft(val);
-          refreshEnvUI();
+            localStorage.setItem(LS_KEY, TSP_STATE.makeSoulCode(soul));
         } catch (e) {
-          showError("lightBtn", e);
+            console.error("[TalisPod] save failed:", e);
         }
-      });
-    };
-    bindLightBtn(lightBtn0, 0);
-    bindLightBtn(lightBtn50, 50);
-    bindLightBtn(lightBtn100, 100);
-
-    applyEnvBtn.addEventListener("click", async () => {
-      try {
-        await playAdventureAndApply();
-        lastRankKey = null;
-      } catch (e) {
-        lockUI(false);
-        showError("applyEnvBtn", e);
-      }
-    });
-  }
-
-  // ===== Boot =====
-  let booted = false;
-
-  function boot() {
-    if (booted) return;
-    booted = true;
-
-    try {
-      if (!window.TSP_STATE) throw new Error("TSP_STATE missing (state.js)");
-      if (!window.TSP_GAME) throw new Error("TSP_GAME missing (game.js)");
-
-      startView = must("startView");
-      mainView = must("mainView");
-
-      headerLine1 = must("headerLine1");
-      headerLine2 = must("headerLine2");
-      headerLine3 = must("headerLine3");
-
-      sagaInput = must("sagaInput");
-      soulTextInput = must("soulTextInput");
-      newSoulBtn = must("newSoulBtn");
-      textRebornBtn = must("textRebornBtn");
-
-      tabBtns = qsa(".tab-btn");
-      tabEls = {
-        home: must("tab-home"),
-        environment: must("tab-environment"),
-        legendz: must("tab-legendz"),
-        crystal: must("tab-crystal"),
-      };
-
-      envAttributeLabel = must("envAttributeLabel");
-      growthTimer = must("growthTimer");
-      growthPreview = must("growthPreview");
-      comebackBtn = must("comebackBtn");
-      homeNeutralBtn = $("homeNeutralBtn");
-
-      spriteMover = must("spriteMover");
-      spriteViewport = must("spriteViewport");
-      spriteSheetLayer = must("spriteSheetLayer");
-      spriteFxLayer = must("spriteFxLayer");
-      scene = document.querySelector(".scene");
-
-      tempSlider = must("tempSlider");
-      humiditySlider = must("humiditySlider");
-      tempValue = must("tempValue");
-      humidityValue = must("humidityValue");
-      lightValue = must("lightValue");
-      lightLabel = must("lightLabel");
-
-      envPreviewLabel = must("envPreviewLabel");
-      neutralBtn = must("neutralBtn");
-      applyEnvBtn = must("applyEnvBtn");
-
-      lightBtn0 = must("lightBtn0");
-      lightBtn50 = must("lightBtn50");
-      lightBtn100 = must("lightBtn100");
-
-      speciesName = must("speciesName");
-      nicknameInput = must("nicknameInput");
-      nicknameApplyBtn = must("nicknameApplyBtn");
-      legendzAttribute = must("legendzAttribute");
-      hpStat = must("hpStat");
-      magicStat = must("magicStat");
-      counterStat = must("counterStat");
-      strikeStat = must("strikeStat");
-      healStat = must("healStat");
-
-      skillSlots = $("skillSlots");
-      crystalList = must("crystalList");
-
-      show(startView);
-      setHeader();
-
-      initSliders();
-
-      envDraft = { temp: 0, hum: 50, light: 50 };
-      envApplied = { ...envDraft };
-      setSlidersFromDraft();
-      setLightDraft(50);
-      refreshEnvUI();
-
-      spriteViewport.style.width = (SHEET.frameW * SHEET.scale) + "px";
-      spriteViewport.style.height = (SHEET.frameH * SHEET.scale) + "px";
-      spriteSheetLayer.style.width = (96 * SHEET.scale) + "px";
-      spriteSheetLayer.style.height = (64 * SHEET.scale) + "px";
-      spriteSheetLayer.style.backgroundRepeat = "no-repeat";
-      spriteSheetLayer.style.backgroundSize = `${96 * SHEET.scale}px ${64 * SHEET.scale}px`;
-
-      setSpriteSheet();
-      setFacing("left");
-      renderFrame(1);
-      applyMoveX(0);
-
-      renderSkillsUI();
-      bindSkillsClickOnce();
-
-      setGrowthTimerNeutral();
-
-      bindEvents();
-      requestAnimationFrame(rafLoop);
-
-    } catch (e) {
-      booted = false;
-      showError("boot", e);
     }
-  }
 
-  window.addEventListener("load", boot, { once: true });
+    function loadGame() {
+        try {
+            var code = localStorage.getItem(LS_KEY);
+            if (code) return TSP_STATE.parseSoulCode(code);
+        } catch (e) {
+            console.warn("[TalisPod] load failed:", e);
+        }
+        return null;
+    }
+
+    function clearSave() {
+        try { localStorage.removeItem(LS_KEY); } catch (e) { }
+    }
+
+    /* =========================================================
+     *  Toast / Modals
+     * ========================================================= */
+    function showToast(msg) {
+        var c = $("toastContainer");
+        var t = document.createElement("div");
+        t.className = "toast";
+        t.textContent = msg;
+        c.appendChild(t);
+        setTimeout(function () { t.remove(); }, 1400);
+    }
+
+    function showNoticeModal(title, msg) {
+        $("noticeModalTitle").textContent = title;
+        $("noticeModalMsg").textContent = msg;
+        $("noticeModal").classList.add("show");
+    }
+
+    function hideNoticeModal() {
+        $("noticeModal").classList.remove("show");
+    }
+
+    function showConfirmModal(title, msg, onYes) {
+        $("confirmModalTitle").textContent = title;
+        $("confirmModalMsg").textContent = msg;
+        $("confirmModal").classList.add("show");
+        $("confirmYes").onclick = function () {
+            $("confirmModal").classList.remove("show");
+            if (onYes) onYes();
+        };
+        $("confirmNo").onclick = function () {
+            $("confirmModal").classList.remove("show");
+        };
+    }
+
+    /* =========================================================
+     *  Adventure Overlay
+     * ========================================================= */
+    function showAdventureOverlay(cb, txtJp, txtEn) {
+        uiLocked = true;
+        $("adventureTextJp").textContent = txtJp || "冒険先へ移動中...";
+        $("adventureTextEn").textContent = txtEn || "Travelling to destination...";
+        $("adventureOverlay").classList.add("show");
+        setTimeout(function () {
+            $("adventureOverlay").classList.remove("show");
+            uiLocked = false;
+            if (cb) cb();
+        }, 3000);
+    }
+
+    /* =========================================================
+     *  Comeback Modal
+     * ========================================================= */
+    function showComebackModal() {
+        if (!soul) {
+            showNoticeModal("エラー", "Soul Doll が見つかりません。");
+            return;
+        }
+        var code = TSP_STATE.makeSoulCode(soul);
+        $("comebackCode").value = code;
+        $("comebackSaga").textContent = "Saga: " + soul.sagaName;
+        $("comebackModal").classList.add("show");
+    }
+
+    function hideComebackModal() {
+        $("comebackModal").classList.remove("show");
+        $("comebackCode").value = "";
+    }
+
+    function copyComebackCode() {
+        var ta = $("comebackCode");
+        ta.focus();
+        ta.select();
+        ta.setSelectionRange(0, 99999); // For mobile
+
+        var success = false;
+        try {
+            // Priority 1: Modern API
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(ta.value).then(function () {
+                    showToast("コピーしました！ / Copied!");
+                });
+                success = true;
+            }
+        } catch (err) { }
+
+        // Priority 2: Fallback to execCommand if modern API failed/unavailable
+        if (!success) {
+            try {
+                var successful = document.execCommand('copy');
+                if (successful) {
+                    showToast("コピーしました！ / Copied!");
+                } else {
+                    showToast("コピーに失敗しました / Copy failed");
+                }
+            } catch (err) {
+                showToast("コピーに失敗しました / Copy failed");
+            }
+        }
+    }
+
+    /* =========================================================
+     *  Legendz Preview (Enlarged)
+     * ========================================================= */
+    function showLdzPreview() {
+        var mon = getMonster();
+        if (!mon) return;
+        var sprite = $("ldzPreviewSprite");
+        sprite.style.backgroundImage = "url('" + mon.spritePath + "')";
+        sprite.style.backgroundSize = "144px 96px";
+        var rc = frameToRC(ldzWalkFrame);
+        sprite.style.backgroundPosition = (-rc.c * 36) + "px " + (-rc.r * 48) + "px";
+
+        // Show species name (Bilingual)
+        var sName = mon.speciesName || "不明";
+        var sNameEn = mon.speciesNameEn || "Unknown";
+        $("ldzPreviewDesc").innerHTML = `<div style="font-weight:800; font-size:1.1rem; margin-bottom:10px;">${sName} <span style="font-size:0.8rem; opacity:0.7;">(${sNameEn})</span></div>`
+            + (mon.desc || "詳細データなし");
+
+        $("ldzPreviewModal").classList.add("show");
+    }
+
+    function hideLdzPreview() {
+        $("ldzPreviewModal").classList.remove("show");
+    }
+
+    /* =========================================================
+     *  Crystal Actions
+     * ========================================================= */
+    var activeCrystalId = null;
+
+    function showSkillDetail(skID) {
+        var sk = window.TSP_SKILL_DATA[skID];
+        if (!sk) return;
+
+        var attrJp = (TSP_GAME.ATTR_META[sk.attribute] || {}).jp || sk.attribute;
+        var attrEn = sk.attribute.charAt(0).toUpperCase() + sk.attribute.slice(1);
+
+        var title = `${sk.name} (${sk.nameEn})`;
+        var msg = `${sk.desc}\n\n` +
+            `属性 / Attr: ${attrJp} (${attrEn})\n` +
+            `威力 / Power: ${sk.power}`;
+
+        showNoticeModal(title, msg);
+    }
+
+    function showCrystalActionModal(cid) {
+        activeCrystalId = cid;
+        var cd = window.TSP_CRYSTAL_DATA[cid];
+        if (!cd) return;
+
+        $("caTitle").innerHTML = `${cd.name} <span style="font-size:0.75rem; opacity:0.6;">(${cd.nameEn})</span>`;
+
+        var descHtml = cd.desc || "説明文なし";
+        if (cd.descEn) descHtml += `<br><span style='font-style:italic; opacity:0.7; font-size:0.8rem;'>(${cd.descEn})</span>`;
+
+        // Add skill info if learnable
+        if (cd.skillId && window.TSP_SKILL_DATA[cd.skillId]) {
+            var sk = window.TSP_SKILL_DATA[cd.skillId];
+            descHtml += `<div class="mt-8 p-8" style="background:rgba(255,255,255,0.05); border-radius:4px; border-left:3px solid var(--accent); cursor:pointer;" onclick="TSP_APP_UTIL.showSkillDetail('${cd.skillId}')">
+                <span style="font-size:0.75rem; color:var(--accent); font-weight:800;">LEARNABLE SKILL (Tap for Detail)</span><br>
+                <span style="font-weight:700;">${sk.name}</span> <span style="font-size:0.7rem;">(${sk.nameEn})</span>
+            </div>`;
+        }
+
+        $("caDesc").innerHTML = descHtml;
+        $("caEffect").textContent = "効果 / Effect: " + cd.effect;
+
+        // "Learn" is only for fragments with skillId
+        $("btnCaLearn").style.display = cd.skillId ? "block" : "none";
+        // Remove View button as per user request
+        $("btnCaView").style.display = "none";
+
+        $("crystalActionModal").classList.add("show");
+    }
+
+    function hideCrystalActionModal() {
+        $("crystalActionModal").classList.remove("show");
+    }
+
+    function doUseCrystal() {
+        if (!soul || !activeCrystalId) return;
+        var cd = window.TSP_CRYSTAL_DATA[activeCrystalId];
+        if (!cd) return;
+
+        if (soul.crystals[activeCrystalId] > 0) {
+            soul.crystals[activeCrystalId]--;
+            cd.applyEffect(soul);
+            showToast(cd.name + " を使用しました！");
+            refreshCrystalTab();
+            refreshStatsUI();
+            saveGame();
+            hideCrystalActionModal();
+        }
+    }
+
+    function showSkillSlotPicker() {
+        if (!soul || !activeCrystalId) return;
+        var cd = window.TSP_CRYSTAL_DATA[activeCrystalId];
+        if (!cd || !cd.skillId) return;
+
+        var container = $("skillSlotList");
+        container.innerHTML = "";
+
+        for (var i = 0; i < 15; i++) {
+            (function (index) {
+                var mid = soul.moves[index];
+                var sk = mid ? window.TSP_SKILL_DATA[mid] : null;
+
+                var item = document.createElement("div");
+                item.className = "slot-picker-item";
+                item.innerHTML = `
+                    <span class="slot-num">${index + 1}</span>
+                    <span class="skill-name">${sk ? sk.name : "（空き）"}</span>
+                    <span class="btn btn-sm btn-primary">セット</span>
+                `;
+                item.onclick = function () {
+                    doLearnCrystalSkill(index);
+                };
+                container.appendChild(item);
+            })(i);
+        }
+
+        $("skillSlotPickerModal").classList.add("show");
+    }
+
+    function hideSkillSlotPicker() {
+        $("skillSlotPickerModal").classList.remove("show");
+    }
+
+    function doLearnCrystalSkill(slotIndex) {
+        if (!soul || !activeCrystalId) return;
+        var cd = window.TSP_CRYSTAL_DATA[activeCrystalId];
+        if (!cd || !cd.skillId) return;
+
+        var sk = window.TSP_SKILL_DATA[cd.skillId];
+        if (!sk) return;
+
+        showConfirmModal("スキル習得", `スロット ${slotIndex + 1} に ${sk.name} をセットしますか？`, function () {
+            if (soul.crystals[activeCrystalId] > 0) {
+                soul.crystals[activeCrystalId]--;
+                soul.moves[slotIndex] = cd.skillId;
+                showToast(sk.name + " を習得しました！");
+
+                refreshCrystalTab();
+                refreshLegendzTab();
+                saveGame();
+
+                hideSkillSlotPicker();
+                hideCrystalActionModal();
+            }
+        });
+    }
+
+    /* =========================================================
+     *  View Switching
+     * ========================================================= */
+    function showStartView() {
+        $("startView").style.display = "flex";
+        $("mainView").style.display = "none";
+        $("headerInfo").style.display = "none";
+        $("btnComeback").style.display = "none";
+
+        // Restore Saga Name from cache
+        var savedSaga = localStorage.getItem(LS_SAGA_KEY);
+        if (savedSaga) {
+            $("inputSagaName").value = savedSaga;
+        }
+
+        // Only clear code, NOT saga name
+        $("inputSoulCode").value = "";
+    }
+
+    function showMainView() {
+        $("startView").style.display = "none";
+        $("mainView").style.display = "flex";
+        $("headerInfo").style.display = "block";
+        $("btnComeback").style.display = "block";
+
+        // Save Saga Name to cache
+        var sagaName = ($("inputSagaName").value || "").trim();
+        if (sagaName) {
+            localStorage.setItem(LS_SAGA_KEY, sagaName);
+        }
+
+        // Only clear code
+        $("inputSoulCode").value = "";
+
+        refreshHeader();
+        refreshStatsUI();
+        switchTab("home");
+    }
+
+    /* =========================================================
+     *  Tab Switching
+     * ========================================================= */
+    function switchTab(tab) {
+        activeTab = tab;
+        var panes = document.querySelectorAll(".tab-pane");
+        for (var i = 0; i < panes.length; i++) {
+            panes[i].classList.remove("active");
+        }
+        $("tab-" + tab).classList.add("active");
+
+        var btns = document.querySelectorAll(".tab-nav button");
+        for (var j = 0; j < btns.length; j++) {
+            btns[j].classList.remove("active");
+        }
+        $("tabBtn-" + tab).classList.add("active");
+
+        // Refresh tab-specific content
+        if (tab === "home") {
+            refreshHomeUI();
+        } else if (tab === "legendz") {
+            refreshLegendzTab();
+        } else if (tab === "crystal") {
+            refreshCrystalTab();
+        } else if (tab === "env") {
+            refreshEnvTab();
+        }
+    }
+
+    /* =========================================================
+     *  Header
+     * ========================================================= */
+    function refreshHeader() {
+        if (!soul) return;
+        var mon = getMonster(); // This gives us LD entry
+        var am = TSP_GAME.ATTR_META[soul.attribute] || {};
+        var mhp = TSP_GAME.maxHP(soul);
+
+        $("headerSaga").textContent = soul.sagaName;
+        $("headerNickname").textContent = soul.nickname || "未登録";
+
+        // Species & Attribute bilingual
+        var spName = soul.speciesName;
+        var spNameEn = mon ? mon.speciesNameEn : "Legendz";
+        var atName = am.jp || "無属性";
+        var atNameEn = am.en || "Neutral";
+
+        $("headerSpeciesFull").textContent = spName + " / " + spNameEn + " (" + atName + " / " + atNameEn + ")";
+
+        // HP Update
+        var hpPct = mhp > 0 ? (soul.currentHP / mhp * 100) : 0;
+        $("headerHPBar").style.width = Math.max(0, Math.min(100, hpPct)) + "%";
+        $("headerHPText").textContent = soul.currentHP + " / " + mhp;
+
+        // HP Danger Alert
+        if (soul.currentHP <= mhp * 0.2 && soul.currentHP > 0) {
+            $("headerHPBar").parentElement.classList.add("hp-danger");
+        } else {
+            $("headerHPBar").parentElement.classList.remove("hp-danger");
+        }
+    }
+
+    /* =========================================================
+     *  Sprite
+     * ========================================================= */
+    var spriteEl = null;
+    var walkPos = 0;
+    var walkDir = 1;
+    var walkAccum = 0;
+    var idleFrame = 1;
+    var idleAccum = 0;
+    var ldzWalkFrame = 1;
+    var ldzWalkAccum = 0;
+    var turnFrameTimer = 0;
+
+    function frameToRC(i) {
+        return { r: Math.floor((i - 1) / 4), c: (i - 1) % 4 };
+    }
+
+    function setSpriteFrame(frame) {
+        if (!spriteEl) return;
+        var rc = frameToRC(frame);
+        var mon = getMonster();
+        if (mon && mon.spritePath) {
+            spriteEl.style.backgroundImage = "url('" + mon.spritePath + "')";
+        }
+        spriteEl.style.backgroundSize = "144px 96px";
+        spriteEl.style.width = "36px";
+        spriteEl.style.height = "48px";
+        spriteEl.style.backgroundPosition = (-rc.c * 36) + "px " + (-rc.r * 48) + "px";
+    }
+
+    function tickIdle(dtSec) {
+        idleAccum += dtSec;
+        if (idleAccum >= 0.6) {
+            idleAccum = 0;
+            idleFrame = (idleFrame === 1) ? 2 : 1;
+            setSpriteFrame(idleFrame);
+        }
+    }
+
+    function tickLegendzSprite(dtSec) {
+        var preview = $("ldzSpritePreview");
+        if (!preview) return;
+        ldzWalkAccum += dtSec;
+        if (ldzWalkAccum >= 0.6) {
+            ldzWalkAccum = 0;
+            // Cycle between 1 and 2 (normal frames)
+            ldzWalkFrame = (ldzWalkFrame === 1) ? 2 : 1;
+            var rc = frameToRC(ldzWalkFrame);
+            var pos = (-rc.c * 36) + "px " + (-rc.r * 48) + "px";
+            preview.style.backgroundPosition = pos;
+
+            var largePreview = $("ldzPreviewSprite");
+            if (largePreview && $("ldzPreviewModal").classList.contains("show")) {
+                largePreview.style.backgroundPosition = pos;
+            }
+        }
+    }
+
+    function tickWalk(dtSec) {
+        walkAccum += dtSec;
+        if (turnFrameTimer > 0) {
+            turnFrameTimer -= dtSec;
+            setSpriteFrame(3); // Upper-left 3rd frame
+            return; // Pause movement while turning
+        }
+
+        // Interval for movement
+        if (walkAccum >= 0.15) {
+            walkAccum = 0;
+            walkPos += walkDir * 4;
+
+            if (walkPos > 42) {
+                walkPos = 42;
+                walkDir = -1;
+                turnFrameTimer = 0.6;
+            }
+            if (walkPos < -42) {
+                walkPos = -42;
+                walkDir = 1;
+                turnFrameTimer = 0.6;
+            }
+
+            // Left-facing sprite (Natural facing is left)
+            spriteEl.style.transform = (walkDir === 1) ? "scale(1.5) scaleX(-1)" : "scale(1.5)";
+            spriteEl.style.left = "calc(50% + " + walkPos + "px - 18px)";
+
+            idleAccum += 0.15;
+            // Half speed for frame switching (0.6s interval)
+            if (idleAccum >= 0.6) {
+                idleAccum = 0;
+                idleFrame = (idleFrame === 1) ? 2 : 1;
+            }
+            setSpriteFrame(idleFrame);
+        }
+    }
+
+    /* =========================================================
+     *  Effects / Particles
+     * ========================================================= */
+    var currentRankFx = "";
+    var fxAccum = 0;
+
+    function clearFxAllHard() {
+        var scene = $("scene");
+        var parts = scene.querySelectorAll(".tsp-particle");
+        for (var i = 0; i < parts.length; i++) parts[i].remove();
+        scene.className = "scene";
+        fxAccum = 0;
+    }
+
+    function spawnParticle(scene, type, emoji, dur) {
+        var p = document.createElement("div");
+        p.className = "tsp-particle " + type;
+        p.textContent = emoji;
+        p.style.setProperty("--dur", dur + "s");
+
+        if (type === "tsp-fly") {
+            var angle = Math.random() * Math.PI * 2;
+            var dist = 60 + Math.random() * 120;
+            p.style.setProperty("--dx", (Math.cos(angle) * dist) + "px");
+            p.style.setProperty("--dy", (Math.sin(angle) * dist) + "px");
+            // Scatter widely if it's a fly particle
+            p.style.left = (10 + Math.random() * 80) + "%";
+            p.style.top = (20 + Math.random() * 60) + "%";
+        } else if (type === "tsp-fall") {
+            p.style.left = (Math.random() * 100) + "%";
+            p.style.top = "-5%";
+            p.style.setProperty("--dy", (180 + Math.random() * 60) + "px");
+        } else if (type === "tsp-drift") {
+            p.style.left = (20 + Math.random() * 60) + "%";
+            p.style.top = (40 + Math.random() * 30) + "%";
+            var dx = -30 + Math.random() * 60;
+            var dy = -40 - Math.random() * 40;
+            p.style.setProperty("--dx", dx + "px");
+            p.style.setProperty("--dy", dy + "px");
+            p.style.setProperty("--dx2", (dx * 1.5) + "px");
+            p.style.setProperty("--dy2", (dy * 1.5) + "px");
+        }
+
+        scene.appendChild(p);
+        setTimeout(function () { p.remove(); }, dur * 1000 + 220);
+    }
+
+    function renderEffects(dtSec, rank) {
+        var scene = $("scene");
+        fxAccum += dtSec;
+
+        if (rank === "superbest") {
+            if (fxAccum >= 0.05) {
+                fxAccum = 0;
+                var emojis = ["✨", "🌟", "🌈", "🎶", "♪", "💖"];
+                for (var i = 0; i < 4; i++) {
+                    var em = emojis[Math.floor(Math.random() * emojis.length)];
+                    spawnParticle(scene, "tsp-fly", em, 1.5 + Math.random() * 0.5);
+                }
+            }
+        } else if (rank === "best") {
+            if (fxAccum >= 0.12) {
+                fxAccum = 0;
+                for (var j = 0; j < 4; j++) {
+                    spawnParticle(scene, "tsp-fall", "♪", 2.0);
+                }
+            }
+        } else if (rank === "good") {
+            if (fxAccum >= 0.45) {
+                fxAccum = 0;
+                var n = 1 + Math.floor(Math.random() * 2);
+                for (var k = 0; k < n; k++) {
+                    spawnParticle(scene, "tsp-drift", "♪", 3.0);
+                }
+            }
+        }
+    }
+
+    /* =========================================================
+     *  Scene Render
+     * ========================================================= */
+    function renderByCurrentEnv(dtSec) {
+        if (!soul) return;
+        var mon = getMonster();
+        var rc = TSP_GAME.computeRank(mon, envApplied, new Date(), soul.attribute);
+        var rank = rc.rank;
+
+        // Update scene area class
+        var scene = $("scene");
+        var areaClass = "area-" + rc.areaId;
+        if (!scene.classList.contains(areaClass)) {
+            // remove old area classes
+            var cls = scene.className.split(/\s+/).filter(function (c) { return !c.startsWith("area-") && !c.startsWith("fx-"); });
+            cls.push(areaClass);
+            // rank fx class
+            if (rank === "bad") cls.push("fx-bad");
+            else if (rank === "superbest") cls.push("fx-superbest");
+            scene.className = cls.join(" ");
+        }
+
+        // If rank changed, reset effects
+        if (rank !== currentRankFx) {
+            clearFxAllHard();
+            // Re-add area class
+            scene.classList.add(areaClass);
+            if (rank === "bad") scene.classList.add("fx-bad");
+            else if (rank === "superbest") scene.classList.add("fx-superbest");
+            currentRankFx = rank;
+
+            // Reset sprite (start moving left = natural facing)
+            walkPos = 0;
+            walkDir = -1;
+            spriteEl.style.left = "calc(50% - 18px)";
+            spriteEl.style.transform = "scale(1.5)";
+        }
+
+        // Sprite behavior per rank
+        if (rank === "superbest" || rank === "best") {
+            setSpriteFrame(7);
+            spriteEl.style.left = "calc(50% - 18px)";
+            spriteEl.style.transform = "scale(1.5)";
+        } else if (rank === "bad") {
+            setSpriteFrame(8);
+            spriteEl.style.left = "calc(50% - 18px)";
+            spriteEl.style.transform = "scale(1.5)";
+        } else if (rank === "neutral") {
+            tickWalk(dtSec);
+        } else {
+            tickIdle(dtSec);
+            spriteEl.style.left = "calc(50% - 18px)";
+            spriteEl.style.transform = "scale(1.5)";
+        }
+
+        // Render particles
+        renderEffects(dtSec, rank);
+    }
+
+    /* =========================================================
+     *  Home Tab UI
+     * ========================================================= */
+    function refreshHomeUI() {
+        if (!soul) return;
+        var mon = getMonster();
+        var now = new Date();
+        var rc = TSP_GAME.computeRank(mon, envApplied, now, soul.attribute);
+        var mhp = TSP_GAME.maxHP(soul);
+
+        // Area & rank
+        $("homeAreaName").textContent = rc.areaName + " / " + rc.areaNameEn;
+        var rankEl = $("homeRankName");
+        rankEl.textContent = rc.rank.toUpperCase();
+        rankEl.className = "info-value rank-" + rc.rank;
+
+        // Timer
+        if (rc.rank === "neutral") {
+            $("homeTimer").textContent = "No Growth";
+        } else {
+            var remaining = Math.max(0, 60 - secondsAccum);
+            var mm = Math.floor(remaining / 60);
+            var ss = Math.floor(remaining % 60);
+            $("homeTimer").textContent = (mm < 10 ? "0" : "") + mm + ":" + (ss < 10 ? "0" : "") + ss;
+        }
+
+        // Growth preview
+        var preview = TSP_GAME.computeMinutePreview(soul, mon, envApplied, now, elemCounter);
+        var gpDiv = $("homeGrowthPreview");
+        gpDiv.innerHTML = "";
+        if (preview.noGrowth) {
+            gpDiv.innerHTML = '<span class="growth-tag">成長なし / No Growth</span>';
+        } else {
+            if (preview.heal > 0) gpDiv.innerHTML += '<span class="growth-tag heal">Heal +' + preview.heal + '</span>';
+            if (preview.hpGrow > 0) gpDiv.innerHTML += '<span class="growth-tag positive">HP +' + preview.hpGrow + '</span>';
+            if (preview.hpDmg > 0) gpDiv.innerHTML += '<span class="growth-tag negative">HP -' + preview.hpDmg + '</span>';
+            var skeys = TSP_GAME.STAT_KEYS;
+            for (var i = 0; i < skeys.length; i++) {
+                var k = skeys[i];
+                if (preview.statGrows[k]) {
+                    gpDiv.innerHTML += '<span class="growth-tag positive">' + (TSP_GAME.STAT_JP[k] || k) + ' +' + preview.statGrows[k] + '</span>';
+                }
+            }
+        }
+
+        // Neutral reset button
+        $("btnNeutralReset").style.display = (rc.rank !== "neutral") ? "block" : "none";
+        // Search button
+        $("btnSearch").style.display = (rc.rank !== "neutral") ? "block" : "none";
+
+        updateSessionGrowthUI();
+    }
+
+    function updateSessionGrowthUI() {
+        var container = $("homeSessionGrowth");
+        if (!container) return;
+
+        var hasGrowth = sessionGrowth.hp > 0 || sessionGrowth.magic > 0 || sessionGrowth.counter > 0 || sessionGrowth.attack > 0 || sessionGrowth.recover > 0;
+
+        if (!hasGrowth) {
+            container.innerHTML = '<div class="session-growth-empty">冒険を開始すると記録されます</div>';
+            return;
+        }
+
+        container.innerHTML = "";
+        if (sessionGrowth.hp > 0) container.innerHTML += `<div class="session-growth-tag hp">HP +${sessionGrowth.hp}</div>`;
+
+        var skeys = TSP_GAME.STAT_KEYS;
+        for (var i = 0; i < skeys.length; i++) {
+            var k = skeys[i];
+            if (sessionGrowth[k] > 0) {
+                container.innerHTML += `<div class="session-growth-tag ${k}">${TSP_GAME.STAT_JP[k]} +${sessionGrowth[k]}</div>`;
+            }
+        }
+    }
+
+    function resetSessionGrowth() {
+        sessionGrowth = { hp: 0, magic: 0, counter: 0, attack: 0, recover: 0 };
+        updateSessionGrowthUI();
+    }
+
+    function triggerGrowthAnim(result) {
+        var labels = [];
+        if (result.hpGrow > 0) labels.push({ text: "HP +" + result.hpGrow, type: "positive" });
+        if (result.heal > 0) labels.push({ text: "Heal +" + result.heal, type: "heal" });
+        if (result.hpDmg > 0) labels.push({ text: "HP -" + result.hpDmg, type: "negative" });
+
+        var skeys = TSP_GAME.STAT_KEYS;
+        for (var i = 0; i < skeys.length; i++) {
+            var k = skeys[i];
+            if (result.statGrows[k]) {
+                labels.push({ text: (TSP_GAME.STAT_JP[k] || k) + " +" + result.statGrows[k], type: "positive" });
+                sessionGrowth[k] += result.statGrows[k];
+            }
+        }
+
+        if (result.hpGrow > 0) sessionGrowth.hp += result.hpGrow;
+
+        labels.forEach(function (lab, idx) {
+            createFloatingText("growthAnimHome", lab.text, lab.type, idx);
+            createFloatingText("growthAnimLdz", lab.text, lab.type, idx);
+        });
+    }
+
+    function createFloatingText(containerId, text, type, index) {
+        var container = $(containerId);
+        if (!container) return;
+
+        var el = document.createElement("div");
+        el.className = "floating-growth-text " + type;
+        el.textContent = text;
+        el.style.animationDelay = (index * 0.4) + "s";
+
+        container.appendChild(el);
+        setTimeout(function () {
+            if (el.parentNode) el.parentNode.removeChild(el);
+        }, 3000);
+    }
+
+    function refreshStatsUI() {
+        refreshHeader();
+        refreshHomeUI();
+        if (activeTab === "legendz") refreshLegendzTab();
+    }
+
+    function updateGrowthPreviewAndTimer() {
+        if (!soul || activeTab !== "home") return;
+        var mon = getMonster();
+        var now = new Date();
+        var rc = TSP_GAME.computeRank(mon, envApplied, now, soul.attribute);
+
+        if (rc.rank === "neutral") {
+            $("homeTimer").textContent = "No Growth";
+        } else {
+            var remaining = Math.max(0, 60 - secondsAccum);
+            var mm = Math.floor(remaining / 60);
+            var ss = Math.floor(remaining % 60);
+            $("homeTimer").textContent = (mm < 10 ? "0" : "") + mm + ":" + (ss < 10 ? "0" : "") + ss;
+        }
+    }
+
+    /* =========================================================
+     *  Env Tab
+     * ========================================================= */
+    function refreshEnvTab() {
+        var tempSlider = $("tempSlider");
+        var humSlider = $("humSlider");
+
+        var ti = parseInt(tempSlider.value || "10");
+        var hi = parseInt(humSlider.value || "10");
+        envDraft.temp = TSP_GAME.TEMP_STEPS[ti] != null ? TSP_GAME.TEMP_STEPS[ti] : 0;
+        envDraft.hum = TSP_GAME.HUM_STEPS[hi] != null ? TSP_GAME.HUM_STEPS[hi] : 50;
+
+        $("tempValue").textContent = envDraft.temp + "°C";
+        $("humValue").textContent = envDraft.hum + "%";
+
+        var isSea = (envDraft.hum >= 100);
+        $("lightLabel").textContent = isSea ? "水深 / Water Depth" : "光量 / Light";
+
+        var lightBtns = document.querySelectorAll(".light-btn");
+        for (var i = 0; i < lightBtns.length; i++) {
+            var btn = lightBtns[i];
+            var v2 = parseInt(btn.dataset.val);
+            btn.classList.toggle("active", v2 === envDraft.light);
+
+            if (isSea) {
+                if (v2 === 0) btn.innerHTML = '<div style="font-size:0.85rem">浅瀬</div><div style="font-size:0.6rem">Shallow</div>';
+                else if (v2 === 50) btn.innerHTML = '<div style="font-size:0.85rem">水中</div><div style="font-size:0.6rem">Mid</div>';
+                else btn.innerHTML = '<div style="font-size:0.85rem">深海</div><div style="font-size:0.6rem">Deep</div>';
+            } else {
+                if (v2 === 0) btn.innerHTML = '<div style="font-size:0.85rem">0 (暗)</div><div style="font-size:0.6rem">Dark</div>';
+                else if (v2 === 50) btn.innerHTML = '<div style="font-size:0.85rem">50</div><div style="font-size:0.6rem">Normal</div>';
+                else btn.innerHTML = '<div style="font-size:0.85rem">100 (明)</div><div style="font-size:0.6rem">Bright</div>';
+            }
+        }
+
+        // Prediction
+        var areaId = window.TSP_AREA.resolveAreaId(envDraft.temp, envDraft.hum, envDraft.light);
+        var area = window.TSP_AREAMAP.AREAS[areaId];
+        var attr = area ? area.attr : "neutral";
+        var am = TSP_GAME.ATTR_META[attr] || {};
+        $("envPreviewArea").textContent = (am.jp || "無属性") + " / " + (am.en || "Neutral");
+    }
+
+    /* =========================================================
+     *  Legendz Tab
+     * ========================================================= */
+    function refreshLegendzTab() {
+        if (!soul) return;
+        var mon = getMonster();
+        var ld = window.TSP_LEGENDZ_DATA && window.TSP_LEGENDZ_DATA[soul.speciesId];
+        var am = TSP_GAME.ATTR_META[soul.attribute] || {};
+        var mhp = TSP_GAME.maxHP(soul);
+
+        // Species + attribute
+        $("ldzSpecies").textContent = soul.speciesName;
+        var attrBadge = $("ldzAttrBadge");
+        attrBadge.textContent = (am.jp || soul.attribute) + " / " + (am.en || soul.attribute);
+        attrBadge.className = "attr-badge " + soul.attribute;
+
+        // Nickname
+        $("ldzNicknameInput").value = soul.nickname || "";
+
+        // Sprite preview (Walking right)
+        var preview = $("ldzSpritePreview");
+        if (mon && mon.spritePath) {
+            preview.style.backgroundImage = "url('" + mon.spritePath + "')";
+            preview.style.backgroundSize = "144px 96px";
+            // Flip right
+            preview.style.transform = "scaleX(-1)";
+            var rc = frameToRC(ldzWalkFrame);
+            preview.style.backgroundPosition = (-rc.c * 36) + "px " + (-rc.r * 48) + "px";
+        }
+
+        // HP
+        $("ldzHP").textContent = soul.currentHP + " / " + mhp;
+        var hpPct = mhp > 0 ? (soul.currentHP / mhp * 100) : 0;
+        $("ldzHPBar").style.width = hpPct + "%";
+
+        // Stats
+        var skeys = TSP_GAME.STAT_KEYS;
+        for (var i = 0; i < skeys.length; i++) {
+            var k = skeys[i];
+            var total = soul.baseStats[k] + soul.growStats[k];
+            var maxG = ld ? ld.maxGrowStats[k] : 630;
+            var cap = soul.baseStats[k] + maxG;
+            $("ldzStat-" + k).textContent = total;
+        }
+
+        // Skills
+        refreshSkillSlots();
+    }
+
+    function refreshSkillSlots() {
+        if (!soul) return;
+        var container = $("ldzSkillSlots");
+        container.innerHTML = "";
+        for (var i = 0; i < 15; i++) {
+            var mid = soul.moves[i];
+            var slot = document.createElement("div");
+            slot.className = "skill-slot";
+
+            if (mid && window.TSP_SKILL_DATA && window.TSP_SKILL_DATA[mid]) {
+                var sk = window.TSP_SKILL_DATA[mid];
+
+                // 1. Attribute Badge (Left)
+                var badge = document.createElement("span");
+                badge.className = "skill-attr-badge attr-badge " + sk.attribute;
+                badge.textContent = (TSP_GAME.ATTR_META[sk.attribute] || {}).jp || sk.attribute;
+                slot.appendChild(badge);
+
+                // 2. Skill Name (Center)
+                var nameWrap = document.createElement("div");
+                nameWrap.style.flex = "1";
+                nameWrap.style.paddingLeft = "8px";
+
+                var nameEl = document.createElement("div");
+                nameEl.className = "skill-name";
+                nameEl.textContent = sk.name;
+                nameWrap.appendChild(nameEl);
+
+                var nameEnEl = document.createElement("div");
+                nameEnEl.className = "skill-name-en";
+                nameEnEl.textContent = sk.nameEn + " (Pow: " + sk.power + ")";
+                nameWrap.appendChild(nameEnEl);
+
+                slot.appendChild(nameWrap);
+
+                // 3. Test Fire Button (Right)
+                var testBtn = document.createElement("button");
+                testBtn.className = "skill-test-btn";
+                testBtn.innerHTML = "🔍";
+                testBtn.onclick = (function (sId) {
+                    return function () {
+                        showSkillDetail(sId);
+                    };
+                })(sk.id);
+                slot.appendChild(testBtn);
+            } else {
+                var emptyEl = document.createElement("span");
+                emptyEl.className = "skill-empty";
+                emptyEl.style.marginLeft = "45px";
+                emptyEl.textContent = "— empty —";
+                slot.appendChild(emptyEl);
+            }
+
+            container.appendChild(slot);
+        }
+    }
+
+    /* =========================================================
+     *  Crystal Tab (v0.8)
+     * ========================================================= */
+    function refreshCrystalTab() {
+        if (!soul) return;
+        var container = $("crystalList");
+        container.innerHTML = "";
+
+        var crystals = soul.crystals || {};
+        var keys = Object.keys(crystals).filter(function (k) { return crystals[k] > 0; });
+
+        if (keys.length === 0) {
+            container.innerHTML = '<div class="crystal-empty">クリスタルを所持していません<br>No crystals yet</div>';
+            return;
+        }
+
+        // Available groups
+        var groupNames = {
+            "cost": "コスト / COST",
+            "volcano": "ヴォルケーノ / VOLCANO",
+            "tornado": "トルネード / TORNADO",
+            "earthquake": "アースクエイク / EARTHQUAKE",
+            "storm": "ストーム / STORM"
+        };
+        var orderedGroups = ["cost", "volcano", "tornado", "earthquake", "storm"];
+
+        orderedGroups.forEach(function (groupKey) {
+            var groupCrystals = keys.filter(function (cid) {
+                var cd = window.TSP_CRYSTAL_DATA[cid];
+                return cd && cd.group === groupKey;
+            });
+
+            if (groupCrystals.length > 0) {
+                var groupEl = document.createElement("div");
+                groupEl.className = "crystal-group";
+
+                var header = document.createElement("div");
+                header.className = "crystal-group-header";
+                header.innerHTML = `
+                    <span>${groupNames[groupKey]}</span>
+                `;
+                header.onclick = function () {
+                    groupEl.classList.toggle("open");
+                };
+
+                var content = document.createElement("div");
+                content.className = "crystal-group-content";
+
+                groupCrystals.forEach(function (cid) {
+                    var cd = window.TSP_CRYSTAL_DATA[cid];
+                    var item = document.createElement("div");
+                    item.className = "crystal-item";
+                    item.innerHTML = `
+                        <div class="crystal-item-name-box">
+                            <div class="name">${cd.name}</div>
+                            <div class="name-en">${cd.nameEn}</div>
+                        </div>
+                        <span class="qty">x${crystals[cid]}</span>
+                    `;
+                    item.onclick = function () {
+                        showCrystalActionModal(cid);
+                    };
+                    content.appendChild(item);
+                });
+
+                groupEl.appendChild(header);
+                groupEl.appendChild(content);
+                container.appendChild(groupEl);
+            }
+        });
+    }
+
+    /* =========================================================
+     *  rafLoop
+     * ========================================================= */
+    var rafStarted = false;
+
+    function rafLoop(msNow) {
+        var dtSec = Math.min(0.05, (msNow - lastRafMs) / 1000);
+        lastRafMs = msNow;
+
+        if (soul && activeTab === "home") {
+            secondsAccum += dtSec;
+            if (secondsAccum >= 60) {
+                secondsAccum -= 60;
+                minuteCounter++;
+                var mon = getMonster();
+                var growth = TSP_GAME.applyOneMinute(soul, mon, envApplied, new Date(), elemCounter);
+                triggerGrowthAnim(growth);
+                refreshStatsUI();
+                saveGame();
+            }
+            updateGrowthPreviewAndTimer();
+            renderByCurrentEnv(dtSec);
+        } else if (soul && activeTab === "legendz") {
+            tickLegendzSprite(dtSec);
+        }
+
+        requestAnimationFrame(rafLoop);
+    }
+
+    function ensureRafLoop() {
+        if (!rafStarted) {
+            rafStarted = true;
+            lastRafMs = performance.now();
+            requestAnimationFrame(rafLoop);
+        }
+    }
+
+    /* =========================================================
+     *  Reborn Actions
+     * ========================================================= */
+    function doNewReborn() {
+        var sagaName = ($("inputSagaName").value || "").trim();
+        if (!sagaName) {
+            showNoticeModal("入力エラー", "サーガ名を入力してください。");
+            return;
+        }
+
+        soul = TSP_STATE.newSoulWindragon(sagaName);
+
+        // Giveaway sample crystals for testing
+        soul.crystals["crystal_cost"] = 2;
+        soul.crystals["fragment_salamander"] = 5;
+        soul.crystals["fragment_blazedragon"] = 3;
+        soul.crystals["fragment_harpy"] = 5;
+        soul.crystals["fragment_tornadoking"] = 1;
+
+        envDraft = { temp: 0, hum: 50, light: 50 };
+        envApplied = { temp: 0, hum: 50, light: 50 };
+        elemCounter = { magic: 0, counter: 0, attack: 0, recover: 0 };
+        secondsAccum = 0;
+        minuteCounter = 0;
+        resetSessionGrowth();
+
+        saveGame();
+        showMainView();
+        ensureRafLoop();
+        showToast("Soul Doll を発見しました！ ウインドラゴンが目を覚ます...");
+    }
+
+    function doCodeReborn() {
+        var sagaName = ($("inputSagaName").value || "").trim();
+        var code = ($("inputSoulCode").value || "").trim();
+        if (!sagaName) {
+            showNoticeModal("入力エラー", "サーガ名を入力してください。");
+            return;
+        }
+        if (!code) {
+            showNoticeModal("入力エラー", "Soul Doll コードを入力してください。");
+            return;
+        }
+
+        try {
+            var s = TSP_STATE.parseSoulCode(code);
+            TSP_STATE.assertSagaMatch(s, sagaName);
+            soul = s; // Validate first, then assign to global
+        } catch (e) {
+            showNoticeModal("復元エラー", e.message);
+            return;
+        }
+
+        envDraft = { temp: 0, hum: 50, light: 50 };
+        envApplied = { temp: 0, hum: 50, light: 50 };
+        elemCounter = { magic: 0, counter: 0, attack: 0, recover: 0 };
+        secondsAccum = 0;
+        minuteCounter = 0;
+        resetSessionGrowth();
+
+        saveGame();
+        showMainView();
+        ensureRafLoop();
+        showToast("Soul Doll の記憶が蘇りました！");
+    }
+
+    /* =========================================================
+     *  Neutral Reset
+     * ========================================================= */
+    function doNeutralReset() {
+        showConfirmModal(
+            "ムゾクセイ？",
+            "Reset environment to neutral?",
+            function () {
+                envApplied = { temp: 0, hum: 50, light: 50 };
+                envDraft = { temp: 0, hum: 50, light: 50 };
+                secondsAccum = 0;
+                resetSessionGrowth();
+
+                // Reset UI controls
+                $("tempSlider").value = 10;
+                $("humSlider").value = 10;
+
+                // Reset Light buttons
+                var lbs = document.querySelectorAll(".light-btn");
+                lbs.forEach(function (b) {
+                    b.classList.remove("active");
+                    if (b.dataset.val === "50") b.classList.add("active");
+                });
+
+                clearFxAllHard();
+                refreshHomeUI();
+                refreshEnvTab();
+                saveGame();
+                showToast("環境を無属性に戻しました");
+            }
+        );
+    }
+
+    /* =========================================================
+     *  Apply Environment
+     * ========================================================= */
+    function doApplyEnv() {
+        if (uiLocked) return;
+        showAdventureOverlay(function () {
+            envApplied = {
+                temp: envDraft.temp,
+                hum: envDraft.hum,
+                light: envDraft.light
+            };
+            secondsAccum = 0;
+            clearFxAllHard();
+            currentRankFx = "";
+            sessionGrowth = { hp: 0, magic: 0, counter: 0, attack: 0, recover: 0 };
+            switchTab("home");
+            refreshStatsUI();
+            saveGame();
+            showToast("冒険先に到着しました！");
+        });
+    }
+
+    function doResetEnv() {
+        envDraft = { temp: 0, hum: 50, light: 50 };
+        $("tempSlider").value = 10;
+        $("humSlider").value = 10;
+        envDraft.light = 50;
+        refreshEnvTab();
+        showToast("環境設定をリセットしました");
+    }
+
+    /* =========================================================
+     *  Nickname
+     * ========================================================= */
+    function doNicknameChange() {
+        if (!soul) return;
+        var val = ($("ldzNicknameInput").value || "").trim();
+        soul.nickname = val;
+        soul.updatedAt = Date.now();
+        refreshHeader();
+        saveGame();
+        showToast("ニックネームを更新しました");
+    }
+
+    /* =========================================================
+     *  Comeback → Go to Reborn
+     * ========================================================= */
+    function goToReborn() {
+        hideComebackModal();
+        // Clear current session
+        soul = null;
+        resetSessionGrowth();
+        showStartView();
+    }
+
+
+
+    /* =========================================================
+     *  Search (Battle / Item)
+     * ========================================================= */
+    function doSearch() {
+        if (!soul || uiLocked) return;
+
+        var mon = getMonster();
+        var rc = TSP_GAME.computeRank(mon, envApplied, new Date(), soul.attribute);
+        if (rc.rank === "neutral") return;
+
+        showAdventureOverlay(function () {
+            var rand = Math.random() * 100;
+            if (rand < 60) {
+                // Battle (60%)
+                showBattleModal("野生のレジェンズが現れた！ / Wild Encounter!", "野生のレジェンズと遭遇しました！<br>(バトルの詳細は後ほど実装されます。現在は自動的に終了します)<br><br>A wild Legend has appeared!<br>(Battle logic coming soon. Ending encounter for now.)");
+            } else if (rand < 80) {
+                // Cost Crystal (20%)
+                gainCrystal("crystal_cost");
+                showBattleModal("発見！ / Found!", "コストクリスタルを発見しました！<br><br>Found a Cost Crystal!");
+            } else {
+                // Attribute Weak Crystal (20%)
+                var weakCid = getWeakCrystalId(rc.envAttr);
+                if (weakCid) {
+                    gainCrystal(weakCid);
+                    var cd = window.TSP_CRYSTAL_DATA[weakCid];
+                    var nameJp = cd ? cd.name : weakCid;
+                    var nameEn = cd ? cd.nameEn : weakCid;
+                    showBattleModal("発見！ / Found!", `${nameJp} を発見しました！<br><br>Found ${nameEn}!`);
+                } else {
+                    showBattleModal("何も見つからなかった... / Nothing Found", "周りを調べましたが、何も見つかりませんでした。<br><br>Looked around but found nothing.");
+                }
+            }
+        }, "竜王を探しています...", "Searching for the Dragon King...");
+    }
+
+    function gainCrystal(cid) {
+        if (!soul) return;
+        soul.crystals[cid] = (soul.crystals[cid] || 0) + 1;
+        saveGame();
+    }
+
+    function getWeakCrystalId(envAttr) {
+        var map = {
+            volcano: "fragment_salamander",
+            tornado: "fragment_harpy",
+            earthquake: "fragment_lizardman",
+            storm: "fragment_stormworm"
+        };
+        return map[envAttr] || null;
+    }
+
+    function showBattleModal(title, msg) {
+        $("battleTitle").innerHTML = title;
+        $("battleMsg").innerHTML = msg;
+        $("battleModal").classList.add("show");
+    }
+
+    function hideBattleModal() {
+        $("battleModal").classList.remove("show");
+    }
+
+    /* =========================================================
+     *  Boot
+     * ========================================================= */
+    function boot() {
+        spriteEl = $("sprite");
+
+        // Tab buttons
+        var tabNames = ["home", "env", "legendz", "crystal"];
+        for (var i = 0; i < tabNames.length; i++) {
+            (function (tn) {
+                $("tabBtn-" + tn).addEventListener("click", function () {
+                    if (uiLocked) return;
+                    switchTab(tn);
+                });
+            })(tabNames[i]);
+        }
+
+        // Start view buttons
+        $("btnNewReborn").addEventListener("click", doNewReborn);
+        $("btnCodeReborn").addEventListener("click", doCodeReborn);
+
+        // Comeback
+        $("btnComeback").addEventListener("click", showComebackModal);
+        $("btnComebackClose").addEventListener("click", hideComebackModal);
+        $("btnComebackCopy").addEventListener("click", copyComebackCode);
+        $("btnComebackReborn").addEventListener("click", goToReborn);
+
+        // Notice modal
+        $("noticeModalOk").addEventListener("click", hideNoticeModal);
+
+        // Env sliders
+        $("tempSlider").max = TSP_GAME.TEMP_STEPS.length - 1;
+        $("tempSlider").value = 10; // 0°C
+        $("humSlider").max = TSP_GAME.HUM_STEPS.length - 1;
+        $("humSlider").value = 10; // 50%
+
+        $("tempSlider").addEventListener("input", refreshEnvTab);
+        $("humSlider").addEventListener("input", refreshEnvTab);
+
+        // Light buttons
+        var lightBtns = document.querySelectorAll(".light-btn");
+        for (var lb = 0; lb < lightBtns.length; lb++) {
+            lightBtns[lb].addEventListener("click", function () {
+                envDraft.light = parseInt(this.dataset.val);
+                refreshEnvTab();
+            });
+        }
+
+        // Env actions
+        $("btnApplyEnv").addEventListener("click", doApplyEnv);
+        $("btnResetEnv").addEventListener("click", doResetEnv);
+
+        // Neutral reset
+        $("btnNeutralReset").addEventListener("click", doNeutralReset);
+
+        // Search
+        $("btnSearch").addEventListener("click", doSearch);
+        $("btnBattleClose").addEventListener("click", hideBattleModal);
+
+        // Nickname
+        $("btnNicknameApply").addEventListener("click", doNicknameChange);
+
+        // Legendz Preview
+        $("ldzSpritePreview").addEventListener("click", showLdzPreview);
+        $("btnLdzPreviewClose").addEventListener("click", hideLdzPreview);
+        $("ldzPreviewClose").addEventListener("click", hideLdzPreview);
+
+        // Crystal Actions
+        $("btnCaCancel").addEventListener("click", hideCrystalActionModal);
+        $("btnCaView").addEventListener("click", hideCrystalActionModal); // For now just close
+        $("btnCaUse").addEventListener("click", doUseCrystal);
+        $("btnCaLearn").addEventListener("click", showSkillSlotPicker);
+        $("btnSlotPickerCancel").addEventListener("click", hideSkillSlotPicker);
+
+        // Initial screen
+        showStartView();
+    }
+
+    // Expose utilities for inline access
+    window.TSP_APP_UTIL = {
+        showSkillDetail: showSkillDetail
+    };
+
+    // DOM Ready
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", boot);
+    } else {
+        boot();
+    }
 
 })();
