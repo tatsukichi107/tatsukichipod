@@ -902,9 +902,10 @@
                 var sk = window.TSP_SKILL_DATA[mid];
 
                 // 1. Attribute Badge (Left)
-                var badge = document.createElement("span");
+                var badge = document.createElement("div");
                 badge.className = "skill-attr-badge attr-badge " + sk.attribute;
-                badge.textContent = (TSP_GAME.ATTR_META[sk.attribute] || {}).jp || sk.attribute;
+                var am = TSP_GAME.ATTR_META[sk.attribute] || {};
+                badge.innerHTML = `<div>${am.jp || sk.attribute}</div><div class="skill-attr-en">${am.en || sk.attribute}</div>`;
                 slot.appendChild(badge);
 
                 // 2. Skill Name (Center)
@@ -937,7 +938,7 @@
             } else {
                 var emptyEl = document.createElement("span");
                 emptyEl.className = "skill-empty";
-                emptyEl.style.marginLeft = "45px";
+                emptyEl.style.paddingLeft = "100px";
                 emptyEl.textContent = "— empty —";
                 slot.appendChild(emptyEl);
             }
@@ -1348,6 +1349,14 @@
 
         // Initial screen
         showStartView();
+
+        // Prevent accidental refresh
+        window.addEventListener("beforeunload", function (e) {
+            if (soul) {
+                e.preventDefault();
+                e.returnValue = "";
+            }
+        });
     }
 
     // Expose utilities for inline access
