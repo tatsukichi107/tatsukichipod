@@ -1,5 +1,5 @@
 /* ============================================================
- *  battle.js  –  Strategic Round-based Battle Logic (v0.9)
+ *  battle.js  –  Strategic Round-based Battle Logic (v1.0)
  * ============================================================ */
 (function () {
     "use strict";
