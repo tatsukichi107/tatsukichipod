@@ -27,13 +27,20 @@
   --warning-glow: rgba(245, 158, 11, 0.25);
 
   /* attribute colors */
-  --attr-volcano: #ff6b35;
-  --attr-tornado: #38bdf8;
-  --attr-earthquake: #a3e635;
-  --attr-storm: #818cf8;
-  --attr-spiritual: #f9a8d4;
+  --attr-volcano: #ff4d00;
+  /* Fire: Red */
+  --attr-tornado: #64d2ff;
+  /* Wind: Light Blue/White hint */
+  --attr-earthquake: #4ade80;
+  /* Earth: Green */
+  --attr-storm: #2563eb;
+  /* Water: Deep Blue */
+  --attr-spiritual: #fbbf24;
+  /* Light: Yellow */
   --attr-necrom: #a855f7;
+  /* Dark: Purple */
   --attr-neutral: #6b7280;
+  /* Neutral: Gray */
 
   /* rank colors */
   --rank-superbest: linear-gradient(135deg, #fbbf24, #f59e0b, #ef4444);
@@ -97,11 +104,47 @@ body {
 /* ---------- Header ---------- */
 .header {
   background: var(--bg-secondary);
-  background-image: linear-gradient(180deg, rgba(99, 102, 241, 0.15) 0%, transparent 100%);
+  background-image: linear-gradient(180deg, rgba(var(--attr-rgb), 0.15) 0%, transparent 100%);
   border-bottom: 1px solid var(--glass-border);
   padding: 8px 16px;
   flex-shrink: 0;
-  z-index: 10;
+  z-index: 2000;
+  position: relative;
+}
+
+#app[data-attribute="volcano"] {
+  --attr-active: var(--attr-volcano);
+  --attr-rgb: 255, 77, 0;
+}
+
+#app[data-attribute="tornado"] {
+  --attr-active: var(--attr-tornado);
+  --attr-rgb: 100, 210, 255;
+}
+
+#app[data-attribute="earthquake"] {
+  --attr-active: var(--attr-earthquake);
+  --attr-rgb: 74, 222, 128;
+}
+
+#app[data-attribute="storm"] {
+  --attr-active: var(--attr-storm);
+  --attr-rgb: 37, 99, 235;
+}
+
+#app[data-attribute="spiritual"] {
+  --attr-active: var(--attr-spiritual);
+  --attr-rgb: 251, 191, 36;
+}
+
+#app[data-attribute="necrom"] {
+  --attr-active: var(--attr-necrom);
+  --attr-rgb: 168, 85, 247;
+}
+
+#app[data-attribute="neutral"] {
+  --attr-active: var(--accent);
+  --attr-rgb: 99, 102, 241;
 }
 
 .header-top {
@@ -114,7 +157,7 @@ body {
 .header-logo {
   font-size: 1.15rem;
   font-weight: 800;
-  background: linear-gradient(135deg, #6366f1, #64d2ff);
+  background: linear-gradient(135deg, var(--attr-active, #6366f1), #ffffff);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -190,8 +233,8 @@ body {
 .header-hp-bar {
   height: 100%;
   width: 100%;
-  background: linear-gradient(90deg, #22c55e, #4ade80);
-  box-shadow: 0 0 8px var(--success-glow);
+  background: linear-gradient(90deg, var(--attr-active, #22c55e), #ffffff);
+  box-shadow: 0 0 8px rgba(var(--attr-rgb, 34, 197, 94), 0.5);
   transition: width 0.3s ease;
 }
 
@@ -244,7 +287,7 @@ body {
 
 .tab-nav button.active .tab-icon {
   transform: scale(1.1);
-  filter: drop-shadow(0 0 8px var(--accent-glow));
+  filter: drop-shadow(0 0 8px rgba(var(--attr-rgb, 99, 102, 241), 0.5));
 }
 
 .tab-nav button::after {
@@ -254,14 +297,14 @@ body {
   left: 20%;
   width: 60%;
   height: 2px;
-  background: var(--accent);
+  background: var(--attr-active, var(--accent));
   border-radius: 2px;
   transform: scaleX(0);
   transition: var(--transition);
 }
 
 .tab-nav button.active {
-  color: var(--text-accent);
+  color: var(--attr-active, var(--text-accent));
 }
 
 .tab-nav button.active::after {
@@ -424,9 +467,9 @@ body {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #6366f1, #818cf8);
+  background: linear-gradient(135deg, var(--attr-active, #6366f1), var(--attr-active, #818cf8));
   color: #fff;
-  box-shadow: 0 4px 16px var(--accent-glow);
+  box-shadow: 0 4px 16px rgba(var(--attr-rgb, 99, 102, 241), 0.35);
 }
 
 .btn-primary:hover {
@@ -1445,7 +1488,8 @@ input[type="range"]::-webkit-slider-thumb:hover {
   display: none;
   align-items: center;
   justify-content: center;
-  z-index: 100;
+  z-index: 500;
+  /* Lower than header (1000) */
   animation: fadeIn 0.2s ease;
 }
 

@@ -42,7 +42,7 @@
 
     /* stat display keys */
     var STAT_KEYS = ["magic", "counter", "attack", "recover"];
-    var STAT_JP = { magic: "マホウ", counter: "カウンター", attack: "ダゲキ", recover: "カイフク" };
+    var STAT_JP = { magic: "MAGIC", counter: "COUNTER", attack: "ATTACK", recover: "RECOVER" };
 
     /* ---------- time-linked light ---------- */
     function expectedLightByTime(dateObj) {
@@ -167,6 +167,11 @@
             return { rank: rc, heal: 0, hpGrow: 0, statGrows: {}, hpDmg: 0, noGrowth: true };
         }
 
+        // Safety: If Rank is BAD and HP <= 10, stop all growth/damage to prevent fainting
+        if (rc.rank === Rank.BAD && soul.currentHP <= 10) {
+            return { rank: rc, heal: 0, hpGrow: 0, statGrows: {}, hpDmg: 0, noGrowth: true };
+        }
+
         var ld = window.TSP_LEGENDZ_DATA && window.TSP_LEGENDZ_DATA[soul.speciesId];
         var maxGHP = ld ? ld.maxGrowHP : 9999;
         var maxGS = ld ? ld.maxGrowStats : { magic: 9999, counter: 9999, attack: 9999, recover: 9999 };
@@ -209,6 +214,9 @@
         };
 
         if (!gp || rc.rank === Rank.NEUTRAL) return result;
+
+        // Safety: If Rank is BAD and HP <= 10, skip growth/damage logic
+        if (rc.rank === Rank.BAD && soul.currentHP <= 10) return result;
 
         var ld = window.TSP_LEGENDZ_DATA && window.TSP_LEGENDZ_DATA[soul.speciesId];
         var maxGHP = ld ? ld.maxGrowHP : 9999;

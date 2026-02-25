@@ -20,7 +20,10 @@
             effect: "HP全回復 + エンカウント無効(10分) / Full Heal + No Encounters (10m)",
             applyEffect: function (soul) {
                 soul.currentHP = window.TSP_GAME.maxHP(soul);
-                // Encounter silence logic would be handled in movement/battle logic
+                // Add 10 minutes (600 seconds) to encounter silence
+                if (window.TSP_APP_UTIL && window.TSP_APP_UTIL.addEncounterSilence) {
+                    window.TSP_APP_UTIL.addEncounterSilence(600);
+                }
             }
         },
 
@@ -200,10 +203,10 @@
         },
         "fragment_orc": {
             id: "fragment_orc", group: "earthquake",
-            name: "オークのカケラ", nameEn: "Orc Fragment",
+            name: "オーガのカケラ", nameEn: "Ogre Fragment",
             attribute: "earthquake", rarity: "rare", skillId: "skill_orc",
             desc: "猪突猛進する獣人のカケラ。ダゲキを極める力を宿す。",
-            descEn: "A fragment of a rampaging orc. Imbued with power to master Attack.",
+            descEn: "A fragment of a rampaging ogre. Imbued with power to master Attack.",
             effect: "ダゲキ / Attack +40",
             applyEffect: function (soul) {
                 var ld = window.TSP_LEGENDZ_DATA && window.TSP_LEGENDZ_DATA[soul.speciesId];
@@ -290,6 +293,106 @@
                 var cap = ld ? ld.maxGrowStats.recover : 999;
                 soul.growStats.recover = Math.min(soul.growStats.recover + 50, cap);
             }
+        },
+
+        /* ===== Legendary Souls ===== */
+        "soul_volcano": {
+            id: "soul_volcano", group: "soul",
+            name: "ヴォルケーノソウル", nameEn: "Volcano Soul",
+            attribute: "volcano", rarity: "epic",
+            desc: "ヴォルケーノキングドラゴンを倒した証。持っているとサーチしても二度と現れない。",
+            descEn: "Proof of defeating Volcano King Dragon. Holding this prevents future encounters.",
+            effect: "キングとの遭遇不可 / King Encounter Disabled",
+            applyEffect: null // Passive only
+        },
+        /* ===== King Fragments (Teach Skills) ===== */
+        "fragment_volcanoking": {
+            id: "fragment_volcanoking", group: "volcano",
+            name: "ヴォルケーノキングドラゴンのカケラ", nameEn: "Volcano King Fragment",
+            attribute: "volcano", rarity: "epic", skillId: "skill_volcanoking_base",
+            desc: "炎の王の魂が宿るカケラ。最高位の火炎操作を可能にする。",
+            descEn: "Shard of the Fire King's soul. Enables mastery of ultimate flames.",
+            effect: "マホウ / Magic +80",
+            applyEffect: function (soul) {
+                var ld = window.TSP_LEGENDZ_DATA && window.TSP_LEGENDZ_DATA[soul.speciesId];
+                var cap = ld ? ld.maxGrowStats.magic : 999;
+                soul.growStats.magic = Math.min(soul.growStats.magic + 80, cap);
+            }
+        },
+        "fragment_tornadoking": {
+            id: "fragment_tornadoking", group: "tornado",
+            name: "トルネードキングドラゴンのカケラ", nameEn: "Tornado King Fragment",
+            attribute: "tornado", rarity: "epic", skillId: "skill_tornadoking_base",
+            desc: "風の王の魂が宿るカケラ。天を衝く竜巻を操る。",
+            descEn: "Shard of the Wind King's soul. Command sky-piercing tornadoes.",
+            effect: "カウンター / Counter +80",
+            applyEffect: function (soul) {
+                var ld = window.TSP_LEGENDZ_DATA && window.TSP_LEGENDZ_DATA[soul.speciesId];
+                var cap = ld ? ld.maxGrowStats.counter : 999;
+                soul.growStats.counter = Math.min(soul.growStats.counter + 80, cap);
+            }
+        },
+        "fragment_earthquakeking": {
+            id: "fragment_earthquakeking", group: "earthquake",
+            name: "アースクエイクキングドラゴンのカケラ", nameEn: "Earthquake King Fragment",
+            attribute: "earthquake", rarity: "epic", skillId: "skill_earthquakeking_base",
+            desc: "地の王の魂が宿るカケラ。大地そのものを揺るがす。",
+            descEn: "Shard of the Earth King's soul. Shake the world to its core.",
+            effect: "ダゲキ / Attack +80",
+            applyEffect: function (soul) {
+                var ld = window.TSP_LEGENDZ_DATA && window.TSP_LEGENDZ_DATA[soul.speciesId];
+                var cap = ld ? ld.maxGrowStats.attack : 999;
+                soul.growStats.attack = Math.min(soul.growStats.attack + 80, cap);
+            }
+        },
+        "fragment_stormking": {
+            id: "fragment_stormking", group: "storm",
+            name: "ストームキングドラゴンのカケラ", nameEn: "Storm King Fragment",
+            attribute: "storm", rarity: "epic", skillId: "skill_stormking_base",
+            desc: "水の王の魂が宿るカケラ。聖なる奔流で全てを癒やす。",
+            descEn: "Shard of the Water King's soul. Heal all with holy currents.",
+            effect: "カイフク / Recover +80",
+            applyEffect: function (soul) {
+                var ld = window.TSP_LEGENDZ_DATA && window.TSP_LEGENDZ_DATA[soul.speciesId];
+                var cap = ld ? ld.maxGrowStats.recover : 999;
+                soul.growStats.recover = Math.min(soul.growStats.recover + 80, cap);
+            }
+        },
+        "soul_tornado": {
+            id: "soul_tornado", group: "soul",
+            name: "トルネードソウル", nameEn: "Tornado Soul",
+            attribute: "tornado", rarity: "epic",
+            desc: "トルネードキングドラゴンを倒した証。持っているとサーチしても二度と現れない。",
+            descEn: "Proof of defeating Tornado King Dragon. Holding this prevents future encounters.",
+            effect: "キングとの遭遇不可 / King Encounter Disabled",
+            applyEffect: null
+        },
+        "soul_earthquake": {
+            id: "soul_earthquake", group: "soul",
+            name: "アースクエイクソウル", nameEn: "Earthquake Soul",
+            attribute: "earthquake", rarity: "epic",
+            desc: "アースクエイクキングドラゴンを倒した証。持っているとサーチしても二度と現れない。",
+            descEn: "Proof of defeating Earthquake King Dragon. Holding this prevents future encounters.",
+            effect: "キングとの遭遇不可 / King Encounter Disabled",
+            applyEffect: null
+        },
+        "soul_storm": {
+            id: "soul_storm", group: "soul",
+            name: "ストームソウル", nameEn: "Storm Soul",
+            attribute: "storm", rarity: "epic",
+            desc: "ストームキングドラゴンを倒した証。持っているとサーチしても二度と現れない。",
+            descEn: "Proof of defeating Storm King Dragon. Holding this prevents future encounters.",
+            effect: "キングとの遭遇不可 / King Encounter Disabled",
+            applyEffect: null
+        },
+        "crystal_king": {
+            id: "crystal_king", group: "soul",
+            name: "おうじゃのクリスタル", nameEn: "King Crystal",
+            attribute: "neutral", rarity: "unique",
+            desc: "ジャバウォックを倒した証。真の強者の象徴。",
+            descEn: "Proof of defeating Jabberwock. The symbol of a true champion.",
+            effect: "伝説の覇者 / Legendary Champion",
+            applyEffect: null
         }
     };
 })();

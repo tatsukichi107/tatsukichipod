@@ -79,7 +79,7 @@
             growHP: 0,
             growStats: { magic: 0, counter: 0, attack: 0, recover: 0 },
             currentHP: base.baseHP,
-            crystals: {},
+            crystals: { "crystal_cost": 3 },
             moves: moves,
             createdAt: Date.now(),
             updatedAt: Date.now()

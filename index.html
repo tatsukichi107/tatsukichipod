@@ -11,6 +11,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="./css/app.css">
+    <link rel="stylesheet" href="./css/battle.css">
 </head>
 
 <body>
@@ -22,7 +23,7 @@
             <div class="header-top">
                 <div>
                     <span class="header-logo">TalisPod</span>
-                    <span class="header-version">v0.85</span>
+                    <span class="header-version">v0.9</span>
                 </div>
                 <button id="btnComeback" class="btn-comeback">💎 Comeback</button>
             </div>
@@ -109,14 +110,18 @@
                                     <span id="homeTimer" class="info-value"
                                         style="font-family: var(--font-mono); font-size: 1.3rem;">00:00</span>
                                 </div>
-                                <div class="growth-sub-label">次回成長予測 / Next Growth (Estimated)</div>
+                                <div id="costCounter" class="cost-counter"
+                                    style="display:none; margin-top:4px; padding:4px 0; border-top:1px solid rgba(255,255,255,0.1); color:var(--text-accent); font-weight:800; font-size:0.8rem;">
+                                    🛡️ SILENCE: <span id="costTimer" style="font-family:var(--font-mono);">10:00</span>
+                                </div>
+                                <div class="growth-sub-label">Estimated Result (Next Growth)</div>
                                 <div id="homeGrowthPreview" class="growth-preview">
-                                    <span class="growth-tag">成長なし / No Growth</span>
+                                    <span class="growth-tag">No Growth</span>
                                 </div>
                                 <div class="session-growth-divider"></div>
-                                <div class="growth-sub-label">現在の累計成長 / Current Session Total</div>
+                                <div class="growth-sub-label">Session Cumulative Growth</div>
                                 <div id="homeSessionGrowth" class="session-growth-box-mini">
-                                    <div class="session-growth-empty">累計成長なし / No growth yet</div>
+                                    <div class="session-growth-empty">No growth this session</div>
                                 </div>
                             </div>
                         </div>
@@ -349,15 +354,87 @@
         </div>
     </div>
 
-    <!-- Battle / Search Result Modal -->
+    <!-- Battle Modal (v0.9 Strategic) -->
     <div id="battleModal" class="modal-overlay">
-        <div class="modal result-modal">
-            <div id="battleTitle" class="modal-title">Encounters!</div>
-            <div class="modal-body">
-                <div id="battleMsg" class="mb-16" style="font-size:0.9rem;"></div>
+        <div class="modal battle-view-modal">
+
+            <!-- Layer 1: Intro -->
+            <div id="battleIntroLayer" class="battle-intro-layer" style="display:none;">
+                <div class="intro-bg-flash"></div>
+                <div class="intro-text">ENEMY APPEARED</div>
             </div>
-            <div class="modal-actions">
-                <button id="btnBattleClose" class="btn btn-primary btn-full">OK</button>
+
+            <!-- Layer 2: Main Battle Scene -->
+            <div id="battleMainLayer" class="battle-main-layer">
+                <div id="battleTitle" class="modal-title">ROUND 1/5</div>
+
+                <div class="battle-arena">
+                    <div id="battleArenaFX" class="battle-arena-fx"></div>
+                    <div id="counterFlashLayer" class="counter-flash-layer">COUNTER!!</div>
+                    <!-- Player side (LEFT) -->
+                    <div class="battle-unit player">
+                        <div id="playerSprite" class="battle-sprite"></div>
+                    </div>
+
+                    <!-- Enemy side (RIGHT) -->
+                    <div class="battle-unit enemy">
+                        <div id="enemySprite" class="battle-sprite"></div>
+                        <div class="unit-info">
+                            <div id="enemyName" class="unit-name">ENEMY</div>
+                            <div class="unit-hp-bar-bg">
+                                <div id="enemyHPBar" class="unit-hp-bar" style="width: 100%;"></div>
+                            </div>
+                            <div id="enemyHPText" class="unit-hp-val">100/100</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="battleLog" class="battle-log">
+                    <div id="battleMsg">...</div>
+                </div>
+            </div>
+
+            <!-- Layer 3: Skill Selection -->
+            <div id="battleSelectionLayer" class="battle-selection-layer" style="display:none;">
+                <div class="selection-header">
+                    <div class="selection-top-row">
+                        <div id="selectionRoundInfo" class="round-info">ROUND 1/5: SET 3 SKILLS (3つのワザを選択)</div>
+                        <div id="selectionTimer" class="selection-timer">30</div>
+                    </div>
+                    <div class="selection-slots">
+                        <div class="slot-item"><span id="slot0">—</span></div>
+                        <div class="slot-item"><span id="slot1">—</span></div>
+                        <div class="slot-item"><span id="slot2">—</span></div>
+                    </div>
+                </div>
+                <div id="battleSkillGrid" class="battle-selection-grid">
+                    <!-- 15 Skills will be injected here -->
+                </div>
+                <div class="btn-confirm-wrapper">
+                    <button id="btnConfirmActions" class="btn btn-primary btn-full" disabled>決定 / CONFIRM</button>
+                </div>
+            </div>
+
+            <!-- Layer 4: Result/Reward -->
+            <div id="battleResultLayer" class="battle-result-overlay" style="display:none;">
+                <div id="battleResultHeader" class="result-text">VICTORY!</div>
+
+                <div id="crystalRewardScene" class="crystal-reward-scene" style="display:none;">
+                    <div class="crystal-prism-container">
+                        <div class="crystal-prism"></div>
+                    </div>
+                    <div id="rewardText" class="reward-msg">【～のカケラを手に入れた！】</div>
+                </div>
+
+                <div id="defeatPenaltyBox" class="defeat-penalty" style="display:none;">
+                    <div style="color:var(--danger); font-weight:800; margin-bottom:8px;">DEFEAT... (敗北)</div>
+                    <div style="font-size:0.8rem; opacity:0.8;">
+                        ダメージ蓄積、及び環境が無属性にリセットされました。<br>
+                        Damage accumulated. Environment reset to neutral.
+                    </div>
+                </div>
+
+                <button id="btnBattleClose" class="btn btn-primary btn-full mt-16">戻る / Return</button>
             </div>
         </div>
     </div>
@@ -379,10 +456,12 @@
     <script src="./js/areaMap.js"></script>
     <script src="./js/areaResolver.js"></script>
     <script src="./data/LegendzData.js"></script>
+    <script src="./data/EnemyLegendz.js"></script>
     <script src="./data/SkillData.js"></script>
     <script src="./data/CrystalData.js"></script>
     <script src="./js/spriteGen.js"></script>
     <script src="./js/game.js"></script>
+    <script src="./js/battle.js"></script>
     <script src="./js/app.js"></script>
 
 </body>

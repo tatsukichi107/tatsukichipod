@@ -15,12 +15,22 @@
     var lastRafMs = 0;
     var secondsAccum = 0;
     var minuteCounter = 0;  // total minutes elapsed
+    var GROWTH_INTERVAL = 20; // Changed to 20 for testing (total 1min for 3 growths). Will be 60 later.
+    var encounterSilenceSec = 0; // Remaining seconds for encounter silence
 
     var envDraft = { temp: 0, hum: 50, light: 50 };
     var envApplied = { temp: 0, hum: 50, light: 50 };
 
     var elemCounter = { magic: 0, counter: 0, attack: 0, recover: 0 };
     var sessionGrowth = { hp: 0, magic: 0, counter: 0, attack: 0, recover: 0 };
+
+    var bgmAudio = new Audio();
+    bgmAudio.loop = true;
+    var currentBgmAttr = "";
+
+    var battleBgm = new Audio();
+    battleBgm.loop = true;
+    var currentBattleBgmPath = "";
 
     var LS_KEY = "talis_pod_save";
     var LS_SAGA_KEY = "talis_pod_saga_name";
@@ -390,19 +400,15 @@
         }
     }
 
-    /* =========================================================
-     *  Header
-     * ========================================================= */
     function refreshHeader() {
         if (!soul) return;
-        var mon = getMonster(); // This gives us LD entry
+        var mon = getMonster();
         var am = TSP_GAME.ATTR_META[soul.attribute] || {};
         var mhp = TSP_GAME.maxHP(soul);
 
         $("headerSaga").textContent = soul.sagaName;
         $("headerNickname").textContent = soul.nickname || "未登録";
 
-        // Species & Attribute bilingual
         var spName = soul.speciesName;
         var spNameEn = mon ? mon.speciesNameEn : "Legendz";
         var atName = am.jp || "無属性";
@@ -410,16 +416,19 @@
 
         $("headerSpeciesFull").textContent = spName + " / " + spNameEn + " (" + atName + " / " + atNameEn + ")";
 
-        // HP Update
         var hpPct = mhp > 0 ? (soul.currentHP / mhp * 100) : 0;
         $("headerHPBar").style.width = Math.max(0, Math.min(100, hpPct)) + "%";
         $("headerHPText").textContent = soul.currentHP + " / " + mhp;
 
-        // HP Danger Alert
         if (soul.currentHP <= mhp * 0.2 && soul.currentHP > 0) {
             $("headerHPBar").parentElement.classList.add("hp-danger");
         } else {
             $("headerHPBar").parentElement.classList.remove("hp-danger");
+        }
+
+        // Update UI Theme
+        if ($("app")) {
+            $("app").setAttribute("data-attribute", soul.attribute || "neutral");
         }
     }
 
@@ -635,6 +644,59 @@
             spriteEl.style.transform = "scale(1.5)";
         }
 
+        // --- NEW: Implement Area BG and Attribute BGM ---
+
+        // 1. Background Image
+        var bgUrl = "";
+        if (rc.isSea) {
+            if (rc.areaId === "SSS" || rc.areaId === "SNS") bgUrl = "./assets/bg/Sea Shallow.png";
+            else if (rc.areaId === "SSM" || rc.areaId === "SNM") bgUrl = "./assets/bg/Sea Mid.png";
+            else if (rc.areaId === "SSD" || rc.areaId === "SND") bgUrl = "./assets/bg/Sea Deep.png";
+        } else if (rc.areaId !== "NEUTRAL") {
+            bgUrl = "./assets/bg/" + rc.areaId + ".png";
+        }
+
+        if (bgUrl) {
+            scene.style.backgroundImage = "url('" + bgUrl + "')";
+            scene.style.backgroundSize = "cover";
+            scene.style.backgroundPosition = "center";
+        } else {
+            scene.style.backgroundImage = "none";
+        }
+
+        // 2. BGM Logic (Skip if battle active)
+        var battleActive = (window.TSP_BATTLE && window.TSP_BATTLE.isActive && window.TSP_BATTLE.isActive());
+        if (!battleActive && soul) {
+            var targetBgmAttr = "";
+            if (rc.isSea) {
+                targetBgmAttr = "Storm"; // Sea areas use Storm.mp3
+            } else if (rc.envAttr !== "neutral") {
+                // Capitalize first letter to match file names (e.g., volcano -> Volcano.mp3)
+                targetBgmAttr = rc.envAttr.charAt(0).toUpperCase() + rc.envAttr.slice(1);
+            } else {
+                targetBgmAttr = "Neutral"; // Neutral.mp3
+            }
+
+            if (targetBgmAttr !== currentBgmAttr) {
+                currentBgmAttr = targetBgmAttr;
+                if (currentBgmAttr) {
+                    bgmAudio.src = "./assets/bgm/" + currentBgmAttr + ".mp3";
+                    bgmAudio.play().catch(function (e) { console.warn("BGM autoplay blocked:", e); });
+                } else {
+                    bgmAudio.pause();
+                }
+            }
+        } else {
+            bgmAudio.pause();
+            currentBgmAttr = "";
+            if (battleActive && soul) {
+                var eid = window.TSP_BATTLE.getEnemyId ? window.TSP_BATTLE.getEnemyId() : null;
+                window.TSP_APP_UTIL.playBattleBGM(eid);
+            } else {
+                window.TSP_APP_UTIL.stopBattleBGM();
+            }
+        }
+
         // Sprite behavior per rank
         if (rank === "superbest" || rank === "best") {
             setSpriteFrame(7);
@@ -676,10 +738,21 @@
         if (rc.rank === "neutral") {
             $("homeTimer").textContent = "No Growth";
         } else {
-            var remaining = Math.max(0, 60 - secondsAccum);
+            var remaining = Math.max(0, GROWTH_INTERVAL - secondsAccum);
             var mm = Math.floor(remaining / 60);
             var ss = Math.floor(remaining % 60);
             $("homeTimer").textContent = (mm < 10 ? "0" : "") + mm + ":" + (ss < 10 ? "0" : "") + ss;
+        }
+
+        // Cost Counter (Encounter Silence)
+        var costEl = $("costCounter");
+        if (encounterSilenceSec > 0) {
+            costEl.style.display = "block";
+            var cm = Math.floor(encounterSilenceSec / 60);
+            var cs = Math.floor(encounterSilenceSec % 60);
+            $("costTimer").textContent = (cm < 10 ? "0" : "") + cm + ":" + (cs < 10 ? "0" : "") + cs;
+        } else {
+            costEl.style.display = "none";
         }
 
         // Growth preview
@@ -703,8 +776,13 @@
 
         // Neutral reset button
         $("btnNeutralReset").style.display = (rc.rank !== "neutral") ? "block" : "none";
-        // Search button
-        $("btnSearch").style.display = (rc.rank !== "neutral") ? "block" : "none";
+        // Search button: Show if not neutral OR if in Neutral area with all 4 souls (for Jabberwock)
+        var has4Souls = (soul.crystals["soul_volcano"] > 0 &&
+            soul.crystals["soul_tornado"] > 0 &&
+            soul.crystals["soul_earthquake"] > 0 &&
+            soul.crystals["soul_storm"] > 0);
+        var showSearch = (rc.rank !== "neutral") || (rc.areaId === "NEUTRAL" && has4Souls);
+        $("btnSearch").style.display = showSearch ? "block" : "none";
 
         updateSessionGrowthUI();
     }
@@ -716,7 +794,7 @@
         var hasGrowth = sessionGrowth.hp > 0 || sessionGrowth.magic > 0 || sessionGrowth.counter > 0 || sessionGrowth.attack > 0 || sessionGrowth.recover > 0;
 
         if (!hasGrowth) {
-            container.innerHTML = '<div class="session-growth-empty">冒険を開始すると記録されます</div>';
+            container.innerHTML = '<div class="session-growth-empty">Start a stay to record growth</div>';
             return;
         }
 
@@ -790,10 +868,21 @@
         if (rc.rank === "neutral") {
             $("homeTimer").textContent = "No Growth";
         } else {
-            var remaining = Math.max(0, 60 - secondsAccum);
+            var remaining = Math.max(0, GROWTH_INTERVAL - secondsAccum);
             var mm = Math.floor(remaining / 60);
             var ss = Math.floor(remaining % 60);
             $("homeTimer").textContent = (mm < 10 ? "0" : "") + mm + ":" + (ss < 10 ? "0" : "") + ss;
+        }
+
+        // Real-time update for Cost Counter
+        var costEl = $("costCounter");
+        if (encounterSilenceSec > 0) {
+            costEl.style.display = "block";
+            var cm = Math.floor(encounterSilenceSec / 60);
+            var cs = Math.floor(encounterSilenceSec % 60);
+            $("costTimer").textContent = (cm < 10 ? "0" : "") + cm + ":" + (cs < 10 ? "0" : "") + cs;
+        } else {
+            costEl.style.display = "none";
         }
     }
 
@@ -969,9 +1058,10 @@
             "volcano": "ヴォルケーノ / VOLCANO",
             "tornado": "トルネード / TORNADO",
             "earthquake": "アースクエイク / EARTHQUAKE",
-            "storm": "ストーム / STORM"
+            "storm": "ストーム / STORM",
+            "soul": "ソウル / SOUL"
         };
-        var orderedGroups = ["cost", "volcano", "tornado", "earthquake", "storm"];
+        var orderedGroups = ["cost", "volcano", "tornado", "earthquake", "storm", "soul"];
 
         orderedGroups.forEach(function (groupKey) {
             var groupCrystals = keys.filter(function (cid) {
@@ -1028,19 +1118,46 @@
         var dtSec = Math.min(0.05, (msNow - lastRafMs) / 1000);
         lastRafMs = msNow;
 
-        if (soul && activeTab === "home") {
+        var battleActive = (window.TSP_BATTLE && window.TSP_BATTLE.isActive && window.TSP_BATTLE.isActive());
+
+        if (soul && activeTab === "home" && !battleActive) {
             secondsAccum += dtSec;
-            if (secondsAccum >= 60) {
-                secondsAccum -= 60;
+
+            // Handle Silence
+            if (encounterSilenceSec > 0) {
+                encounterSilenceSec -= dtSec;
+                if (encounterSilenceSec < 0) encounterSilenceSec = 0;
+            }
+
+            if (secondsAccum >= GROWTH_INTERVAL) {
+                secondsAccum -= GROWTH_INTERVAL;
                 minuteCounter++;
                 var mon = getMonster();
                 var growth = TSP_GAME.applyOneMinute(soul, mon, envApplied, new Date(), elemCounter);
                 triggerGrowthAnim(growth);
                 refreshStatsUI();
                 saveGame();
+
+                // Forced Battle Trigger every 3 status ups
+                if (minuteCounter % 3 === 0 && minuteCounter > 0) {
+                    if (encounterSilenceSec <= 0) {
+                        showAdventureOverlay(function () {
+                            if (window.TSP_BATTLE) {
+                                var eid = getEnemyIdForEnv(envApplied.envAttr);
+                                window.TSP_BATTLE.start(soul, eid);
+                            }
+                        }, "強力な気配を感じる...", "Feeling a powerful presence...");
+                    } else {
+                        showToast("🛡️ コストクリスタルの効果でエンカウントを回避中...");
+                    }
+                }
             }
             updateGrowthPreviewAndTimer();
             renderByCurrentEnv(dtSec);
+        } else if (soul && activeTab === "home" && battleActive) {
+            // Battle is active: timer is paused, but we still render basic environment stuff if needed?
+            // Usually battle screen covers everything, but just in case.
+            renderByCurrentEnv(0);
         } else if (soul && activeTab === "legendz") {
             tickLegendzSprite(dtSec);
         }
@@ -1067,13 +1184,6 @@
         }
 
         soul = TSP_STATE.newSoulWindragon(sagaName);
-
-        // Giveaway sample crystals for testing
-        soul.crystals["crystal_cost"] = 2;
-        soul.crystals["fragment_salamander"] = 5;
-        soul.crystals["fragment_blazedragon"] = 3;
-        soul.crystals["fragment_harpy"] = 5;
-        soul.crystals["fragment_tornadoking"] = 1;
 
         envDraft = { temp: 0, hum: 50, light: 50 };
         envApplied = { temp: 0, hum: 50, light: 50 };
@@ -1125,31 +1235,36 @@
     /* =========================================================
      *  Neutral Reset
      * ========================================================= */
+    function applyNeutralEnvironment() {
+        envApplied = { temp: 0, hum: 50, light: 50 };
+        envDraft = { temp: 0, hum: 50, light: 50 };
+        secondsAccum = 0;
+        minuteCounter = 0;
+        resetSessionGrowth();
+
+        // Reset UI controls
+        if ($("tempSlider")) $("tempSlider").value = 10;
+        if ($("humSlider")) $("humSlider").value = 10;
+
+        // Reset Light buttons
+        var lbs = document.querySelectorAll(".light-btn");
+        lbs.forEach(function (b) {
+            b.classList.remove("active");
+            if (b.dataset.val === "50") b.classList.add("active");
+        });
+
+        clearFxAllHard();
+        refreshHomeUI();
+        refreshEnvTab();
+        saveGame();
+    }
+
     function doNeutralReset() {
         showConfirmModal(
             "ムゾクセイ？",
             "Reset environment to neutral?",
             function () {
-                envApplied = { temp: 0, hum: 50, light: 50 };
-                envDraft = { temp: 0, hum: 50, light: 50 };
-                secondsAccum = 0;
-                resetSessionGrowth();
-
-                // Reset UI controls
-                $("tempSlider").value = 10;
-                $("humSlider").value = 10;
-
-                // Reset Light buttons
-                var lbs = document.querySelectorAll(".light-btn");
-                lbs.forEach(function (b) {
-                    b.classList.remove("active");
-                    if (b.dataset.val === "50") b.classList.add("active");
-                });
-
-                clearFxAllHard();
-                refreshHomeUI();
-                refreshEnvTab();
-                saveGame();
+                applyNeutralEnvironment();
                 showToast("環境を無属性に戻しました");
             }
         );
@@ -1167,6 +1282,7 @@
                 light: envDraft.light
             };
             secondsAccum = 0;
+            minuteCounter = 0;
             clearFxAllHard();
             currentRankFx = "";
             sessionGrowth = { hp: 0, magic: 0, counter: 0, attack: 0, recover: 0 };
@@ -1207,6 +1323,19 @@
         // Clear current session
         soul = null;
         resetSessionGrowth();
+
+        // Stop BGM
+        bgmAudio.pause();
+        currentBgmAttr = "";
+        // Stop Battle BGM
+        battleBgm.pause();
+        battleBgm.currentTime = 0;
+
+        // Reset UI Theme to neutral
+        if ($("app")) {
+            $("app").setAttribute("data-attribute", "neutral");
+        }
+
         showStartView();
     }
 
@@ -1220,17 +1349,49 @@
 
         var mon = getMonster();
         var rc = TSP_GAME.computeRank(mon, envApplied, new Date(), soul.attribute);
-        if (rc.rank === "neutral") return;
+
+        // Check for Jabberwock (Neutral area + 4 souls)
+        var has4Souls = (soul.crystals["soul_volcano"] > 0 &&
+            soul.crystals["soul_tornado"] > 0 &&
+            soul.crystals["soul_earthquake"] > 0 &&
+            soul.crystals["soul_storm"] > 0);
+
+        if (rc.areaId === "NEUTRAL") {
+            if (has4Souls) {
+                showAdventureOverlay(function () {
+                    // Consume souls
+                    soul.crystals["soul_volcano"]--;
+                    soul.crystals["soul_tornado"]--;
+                    soul.crystals["soul_earthquake"]--;
+                    soul.crystals["soul_storm"]--;
+                    saveGame();
+                    refreshCrystalTab();
+
+                    if (window.TSP_BATTLE) {
+                        window.TSP_BATTLE.start(soul, "jabberwock");
+                    }
+                }, "ソウルが共鳴している...", "Souls are resonating...");
+                return;
+            } else {
+                showToast("この場所には何もいないようだ...");
+                return;
+            }
+        }
 
         showAdventureOverlay(function () {
             var rand = Math.random() * 100;
             if (rand < 60) {
-                // Battle (60%)
-                showBattleModal("野生のレジェンズが現れた！ / Wild Encounter!", "野生のレジェンズと遭遇しました！<br>(バトルの詳細は後ほど実装されます。現在は自動的に終了します)<br><br>A wild Legend has appeared!<br>(Battle logic coming soon. Ending encounter for now.)");
+                // Real Battle (v0.9)
+                if (window.TSP_BATTLE) {
+                    var eid = getSearchEnemyIdForEnv(rc);
+                    window.TSP_BATTLE.start(soul, eid);
+                } else {
+                    showNoticeModal("エラー", "バトルシステムの読み込みに失敗しました。");
+                }
             } else if (rand < 80) {
                 // Cost Crystal (20%)
                 gainCrystal("crystal_cost");
-                showBattleModal("発見！ / Found!", "コストクリスタルを発見しました！<br><br>Found a Cost Crystal!");
+                showNoticeModal("発見！ / Found!", "コストクリスタルを発見しました！\n\nFound a Cost Crystal!");
             } else {
                 // Attribute Weak Crystal (20%)
                 var weakCid = getWeakCrystalId(rc.envAttr);
@@ -1239,9 +1400,9 @@
                     var cd = window.TSP_CRYSTAL_DATA[weakCid];
                     var nameJp = cd ? cd.name : weakCid;
                     var nameEn = cd ? cd.nameEn : weakCid;
-                    showBattleModal("発見！ / Found!", `${nameJp} を発見しました！<br><br>Found ${nameEn}!`);
+                    showNoticeModal("発見！ / Found!", nameJp + " を発見しました！\n\nFound " + nameEn + "!");
                 } else {
-                    showBattleModal("何も見つからなかった... / Nothing Found", "周りを調べましたが、何も見つかりませんでした。<br><br>Looked around but found nothing.");
+                    showNoticeModal("何も見つからなかった... / Nothing Found", "周りを調べましたが、何も見つかりませんでした。\n\nLooked around but found nothing.");
                 }
             }
         }, "竜王を探しています...", "Searching for the Dragon King...");
@@ -1251,6 +1412,19 @@
         if (!soul) return;
         soul.crystals[cid] = (soul.crystals[cid] || 0) + 1;
         saveGame();
+        refreshCrystalTab();
+    }
+
+    function gainRandomCrystal() {
+        var keys = Object.keys(window.TSP_CRYSTAL_DATA);
+        var cid = keys[Math.floor(Math.random() * keys.length)];
+        gainCrystal(cid);
+        var cdata = window.TSP_CRYSTAL_DATA[cid];
+        showToast(cdata.name + " を獲得！");
+    }
+
+    function gainSpecificCrystal(cid) {
+        gainCrystal(cid);
     }
 
     function getWeakCrystalId(envAttr) {
@@ -1261,6 +1435,32 @@
             storm: "fragment_stormworm"
         };
         return map[envAttr] || null;
+    }
+
+    function getEnemyIdForEnv(envAttr) {
+        if (envAttr === "volcano") return "willowisp";
+        if (envAttr === "tornado") return "harpy";
+        if (envAttr === "earthquake") return "caitsith";
+        if (envAttr === "storm") return "giantcrab";
+        return "harpy";
+    }
+
+    function getSearchEnemyIdForEnv(rc) {
+        var envAttr = rc.envAttr;
+        var aid = rc.areaId;
+
+        // King Dragon checks
+        if (aid === "V1" && !(soul.crystals["soul_volcano"] > 0)) return "volcanoking";
+        if (aid === "T1" && !(soul.crystals["soul_tornado"] > 0)) return "tornadoking";
+        if (aid === "E1" && !(soul.crystals["soul_earthquake"] > 0)) return "earthquakeking";
+        if (aid === "S1" && !(soul.crystals["soul_storm"] > 0)) return "stormking";
+
+        // Normal Search Tier
+        if (envAttr === "volcano") return "wyvern";
+        if (envAttr === "tornado") return "manticore";
+        if (envAttr === "earthquake") return "ogre";
+        if (envAttr === "storm") return "undine";
+        return "harpy";
     }
 
     function showBattleModal(title, msg) {
@@ -1300,6 +1500,13 @@
         $("btnComebackCopy").addEventListener("click", copyComebackCode);
         $("btnComebackReborn").addEventListener("click", goToReborn);
 
+        // Battle
+        $("btnBattleClose").addEventListener("click", function () {
+            hideBattleModal();
+            refreshHeader();
+            refreshStatsUI();
+        });
+
         // Notice modal
         $("noticeModalOk").addEventListener("click", hideNoticeModal);
 
@@ -1330,7 +1537,6 @@
 
         // Search
         $("btnSearch").addEventListener("click", doSearch);
-        $("btnBattleClose").addEventListener("click", hideBattleModal);
 
         // Nickname
         $("btnNicknameApply").addEventListener("click", doNicknameChange);
@@ -1361,7 +1567,46 @@
 
     // Expose utilities for inline access
     window.TSP_APP_UTIL = {
-        showSkillDetail: showSkillDetail
+        showSkillDetail: showSkillDetail,
+        gainRandomCrystal: gainRandomCrystal,
+        gainSpecificCrystal: gainSpecificCrystal,
+        neutralizeEnvironment: applyNeutralEnvironment,
+        refreshHeader: refreshHeader,
+        resetTimer: function () { secondsAccum = 0; },
+        saveAndRefresh: function () {
+            saveGame();
+            refreshHeader();
+            refreshStatsUI();
+            refreshCrystalTab();
+            refreshHomeUI();
+        },
+        resetSessionGrowth: resetSessionGrowth,
+        addEncounterSilence: function (sec) {
+            encounterSilenceSec += sec;
+            // Cap at 99 minutes (5940 seconds)
+            if (encounterSilenceSec > 5940) encounterSilenceSec = 5940;
+        },
+        pauseBGM: function () {
+            bgmAudio.pause();
+        },
+        resumeBGM: function () {
+            if (currentBgmAttr) bgmAudio.play().catch(e => { });
+        },
+        stopBattleBGM: function () {
+            battleBgm.pause();
+            currentBattleBgmPath = ""; // Reset path to allow re-triggering
+        },
+        playBattleBGM: function (enemyId) {
+            var path = (enemyId === "jabberwock") ? "./assets/bgm/Jabberwock.mp3" : "./assets/bgm/battle.mp3";
+            if (currentBattleBgmPath !== path) {
+                currentBattleBgmPath = path;
+                battleBgm.src = path;
+                battleBgm.currentTime = 0;
+            }
+            if (battleBgm.paused) {
+                battleBgm.play().catch(e => { });
+            }
+        }
     };
 
     // DOM Ready
