@@ -309,7 +309,7 @@
         "fragment_volcanoking": {
             id: "fragment_volcanoking", group: "volcano",
             name: "ヴォルケーノキングドラゴンのカケラ", nameEn: "Volcano King Fragment",
-            attribute: "volcano", rarity: "epic", skillId: "skill_volcanoking_base",
+            attribute: "volcano", rarity: "epic", skillId: "skill_volcanoking",
             desc: "炎の王の魂が宿るカケラ。最高位の火炎操作を可能にする。",
             descEn: "Shard of the Fire King's soul. Enables mastery of ultimate flames.",
             effect: "マホウ / Magic +80",
@@ -322,7 +322,7 @@
         "fragment_tornadoking": {
             id: "fragment_tornadoking", group: "tornado",
             name: "トルネードキングドラゴンのカケラ", nameEn: "Tornado King Fragment",
-            attribute: "tornado", rarity: "epic", skillId: "skill_tornadoking_base",
+            attribute: "tornado", rarity: "epic", skillId: "skill_tornadoking",
             desc: "風の王の魂が宿るカケラ。天を衝く竜巻を操る。",
             descEn: "Shard of the Wind King's soul. Command sky-piercing tornadoes.",
             effect: "カウンター / Counter +80",
@@ -335,7 +335,7 @@
         "fragment_earthquakeking": {
             id: "fragment_earthquakeking", group: "earthquake",
             name: "アースクエイクキングドラゴンのカケラ", nameEn: "Earthquake King Fragment",
-            attribute: "earthquake", rarity: "epic", skillId: "skill_earthquakeking_base",
+            attribute: "earthquake", rarity: "epic", skillId: "skill_earthquakeking",
             desc: "地の王の魂が宿るカケラ。大地そのものを揺るがす。",
             descEn: "Shard of the Earth King's soul. Shake the world to its core.",
             effect: "ダゲキ / Attack +80",
@@ -348,7 +348,7 @@
         "fragment_stormking": {
             id: "fragment_stormking", group: "storm",
             name: "ストームキングドラゴンのカケラ", nameEn: "Storm King Fragment",
-            attribute: "storm", rarity: "epic", skillId: "skill_stormking_base",
+            attribute: "storm", rarity: "epic", skillId: "skill_stormking",
             desc: "水の王の魂が宿るカケラ。聖なる奔流で全てを癒やす。",
             descEn: "Shard of the Water King's soul. Heal all with holy currents.",
             effect: "カイフク / Recover +80",

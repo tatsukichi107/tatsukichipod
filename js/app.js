@@ -248,6 +248,8 @@
 
         // "Learn" is only for fragments with skillId
         $("btnCaLearn").style.display = cd.skillId ? "block" : "none";
+        // "Use" is for items with immediate effect
+        $("btnCaUse").style.display = cd.applyEffect ? "block" : "none";
         // Remove View button as per user request
         $("btnCaView").style.display = "none";
 
