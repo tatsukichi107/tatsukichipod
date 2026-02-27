@@ -543,7 +543,8 @@
 }
 
 .btn-confirm-wrapper {
-    margin-top: 12px;
+    margin-top: 6px;
+    margin-bottom: 8px;
 }
 
 #btnConfirmActions {

@@ -1145,7 +1145,10 @@
                     if (encounterSilenceSec <= 0) {
                         showAdventureOverlay(function () {
                             if (window.TSP_BATTLE) {
-                                var eid = getEnemyIdForEnv(envApplied.envAttr);
+                                // 現在の環境属性を正しく計算して敵を選択
+                                var mon = getMonster();
+                                var rc = TSP_GAME.computeRank(mon, envApplied, new Date(), soul.attribute);
+                                var eid = getEnemyIdForEnv(rc.envAttr);
                                 window.TSP_BATTLE.start(soul, eid);
                             }
                         }, "強力な気配を感じる...", "Feeling a powerful presence...");
@@ -1440,11 +1443,12 @@
     }
 
     function getEnemyIdForEnv(envAttr) {
+        // 自然エンカウント：各属性に1体固定
         if (envAttr === "volcano") return "willowisp";
         if (envAttr === "tornado") return "harpy";
         if (envAttr === "earthquake") return "caitsith";
         if (envAttr === "storm") return "giantcrab";
-        return "harpy";
+        return "harpy"; // NEUTRAL fallback
     }
 
     function getSearchEnemyIdForEnv(rc) {

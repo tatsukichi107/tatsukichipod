@@ -263,7 +263,7 @@
             moves: [
                 "skill_volcanoking_base", "skill_volcanoking_base", "skill_volcanoking", "skill_blazedragon", "skill_wyvern",
                 "skill_tornadoking", "skill_assassinbug", "skill_manticore", "skill_earthquakeking", "skill_orc", "skill_dwarf",
-                "skill_stormking", "skill_undine", "skill_mazeoctopus", "skill_basic_slap", "skill_basic_slap"
+                "skill_stormking", "skill_undine", "skill_mazeoctopus", "skill_basic_slap"
             ],
             reward: [
                 { id: "fragment_volcanoking", chance: 100, name: "ヴォルケーノキングドラゴンのカケラ" },
@@ -277,7 +277,7 @@
             moves: [
                 "skill_tornadoking_base", "skill_tornadoking_base", "skill_volcanoking", "skill_blazedragon", "skill_wyvern",
                 "skill_tornadoking", "skill_assassinbug", "skill_manticore", "skill_earthquakeking", "skill_orc", "skill_dwarf",
-                "skill_stormking", "skill_undine", "skill_mazeoctopus", "skill_basic_slap", "skill_basic_slap"
+                "skill_stormking", "skill_undine", "skill_mazeoctopus", "skill_basic_slap"
             ],
             reward: [
                 { id: "fragment_tornadoking", chance: 100, name: "トルネードキングドラゴンのカケラ" },
@@ -291,7 +291,7 @@
             moves: [
                 "skill_earthquakeking_base", "skill_earthquakeking_base", "skill_volcanoking", "skill_blazedragon", "skill_wyvern",
                 "skill_tornadoking", "skill_assassinbug", "skill_manticore", "skill_earthquakeking", "skill_orc", "skill_dwarf",
-                "skill_stormking", "skill_undine", "skill_mazeoctopus", "skill_basic_slap", "skill_basic_slap"
+                "skill_stormking", "skill_undine", "skill_mazeoctopus", "skill_basic_slap"
             ],
             reward: [
                 { id: "fragment_earthquakeking", chance: 100, name: "アースクエイクキングドラゴンのカケラ" },
@@ -305,7 +305,7 @@
             moves: [
                 "skill_stormking_base", "skill_stormking_base", "skill_volcanoking", "skill_blazedragon", "skill_wyvern",
                 "skill_tornadoking", "skill_assassinbug", "skill_manticore", "skill_earthquakeking", "skill_orc", "skill_dwarf",
-                "skill_stormking", "skill_undine", "skill_mazeoctopus", "skill_basic_slap", "skill_basic_slap"
+                "skill_stormking", "skill_undine", "skill_mazeoctopus", "skill_basic_slap"
             ],
             reward: [
                 { id: "fragment_stormking", chance: 100, name: "ストームキングドラゴンのカケラ" },

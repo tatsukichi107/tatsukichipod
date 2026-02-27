@@ -1,5 +1,5 @@
 /* ============================================================
- *  battle.js  –  Strategic Round-based Battle Logic (v1.01)
+ *  battle.js  –  Strategic Round-based Battle Logic (v1.02)
  * ============================================================ */
 (function () {
     "use strict";
@@ -529,10 +529,17 @@
         el.textContent = text;
         $("battleArenaFX").appendChild(el);
 
-        var x = isPlayer ? 60 : 320;
-        var y = 40;
-        el.style.left = x + "px";
-        el.style.top = y + "px";
+        if (isPlayer) {
+            el.style.left = "8px";
+            el.style.top = "10px";
+            el.style.right = "";
+        } else {
+            // 敵スプライトの上に右寄せで表示 (見切れ防止)
+            el.style.right = "8px";
+            el.style.left = "auto";
+            el.style.top = "10px";
+            el.style.textAlign = "right";
+        }
     }
 
     function clearFloatingSkills() {
