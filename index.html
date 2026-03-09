@@ -23,7 +23,7 @@
             <div class="header-top">
                 <div>
                     <span class="header-logo">TalisPod</span>
-                    <span class="header-version">v1.02</span>
+                    <span class="header-version">v1.05</span>
                 </div>
                 <button id="btnComeback" class="btn-comeback">💎 Comeback</button>
             </div>
@@ -243,10 +243,72 @@
                     </div>
                 </div>
 
+                <!-- LAB TAB -->
+                <div id="tab-lab" class="tab-pane">
+                    <div class="env-section-title" style="margin-bottom:12px;">💻 ラボラトリ / Laboratory</div>
+
+                    <div class="crystal-groups-container">
+                        <!-- Archive -->
+                        <div class="lab-section archive-section">
+                            <div class="archive-header" onclick="window.TSP_APP_UTIL.toggleSection('archive')">
+                                <div class="archive-header-title">📖 レジェンズ図鑑 / Legendz Archive</div>
+                                <div id="archiveToggleIcon" class="archive-toggle-icon">▼</div>
+                            </div>
+                            <div id="archiveBody" class="archive-body">
+                                <div class="lab-desc">これまでに育成したことのあるレジェンズたち。</div>
+                                <div id="archiveGrid" class="archive-grid">
+                                    <!-- Injected Archive Items -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Reincarnation -->
+                        <div class="lab-section archive-section">
+                            <div class="archive-header" onclick="window.TSP_APP_UTIL.toggleSection('rein')">
+                                <div class="archive-header-title">🔄 転生 / Reincarnation</div>
+                                <div id="reinToggleIcon" class="archive-toggle-icon" style="transform: rotate(-90deg);">
+                                    ▼
+                                </div>
+                            </div>
+                            <div id="reinBody" class="archive-body collapsed">
+                                <div class="lab-desc">
+                                    特定のカケラを消費して、新しいレジェンズの姿に生まれ変わります。<br>
+                                    Consume specific fragments to be reborn into a new Legendz form.<br>
+                                    <span style="color:var(--danger)">
+                                        ※強さやワザはリセットされますが、カケラ等のアイテムは引き継がれます。<br>
+                                        *Stats and skills will be reset, but items/fragments will be preserved.
+                                    </span>
+                                </div>
+                                <button class="btn btn-full btn-secondary"
+                                    onclick="window.TSP_APP_UTIL.showNoticeModal('転生 / Reincarnation', '今後のアップデートで実装予定です。<br><br>Coming soon in a future update.')">
+                                    🔄 転生する / Reincarnate
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Challenges -->
+                        <div class="lab-section archive-section">
+                            <div class="archive-header" onclick="window.TSP_APP_UTIL.toggleSection('chall')">
+                                <div class="archive-header-title">⚔️ 挑戦状 / Challenges</div>
+                                <div id="challToggleIcon" class="archive-toggle-icon"
+                                    style="transform: rotate(-90deg);">▼
+                                </div>
+                            </div>
+                            <div id="challBody" class="archive-body collapsed">
+                                <button class="btn btn-full btn-secondary"
+                                    onclick="window.TSP_APP_UTIL.showNoticeModal('挑戦状 / Challenges', '今後のアップデートで実装予定です。<br><br>Coming soon in a future update.')">
+                                    ⚔️ 挑戦状を読み込む / Load Challenge
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- End of tabContent -->
+                </div>
+
             </div>
 
             <!-- Tab Navigation -->
-            <nav class="tab-nav">
+            <nav id="tabNav" class="tab-nav">
                 <button id="tabBtn-home" onclick="switchTab('home')" class="active">
                     <div class="tab-icon">🏠</div>Home
                 </button>
@@ -259,6 +321,9 @@
                 <button id="tabBtn-crystal" onclick="switchTab('crystal')">
                     <div class="tab-icon">💎</div>Crystal
                 </button>
+                <button id="tabBtn-lab" onclick="switchTab('lab')">
+                    <div class="tab-icon">💻</div>Lab
+                </button>
             </nav>
 
         </div><!-- /mainView -->
@@ -269,13 +334,15 @@
 
     <!-- Notice Modal -->
     <div id="noticeModal" class="modal-overlay">
+        <div id="noticeModalCloseArea" class="modal-close-area"></div>
         <div class="modal">
-            <div id="noticeModalTitle" class="modal-title">お知らせ</div>
-            <div class="modal-body">
-                <p id="noticeModalMsg"></p>
+            <div id="noticeModalTitle" class="modal-title"
+                style="color:var(--accent); font-weight:800; font-size:1.1rem; margin-bottom:10px;">お知らせ / Notice</div>
+            <div id="noticeModalBody" class="modal-body"
+                style="font-size:0.9rem; line-height:1.6; padding:10px 0; white-space: pre-wrap; color: var(--text-primary);">
             </div>
-            <div class="modal-actions">
-                <button id="noticeModalOk" class="btn btn-primary btn-full">OK</button>
+            <div class="modal-actions mt-16">
+                <button id="btnNoticeModalClose" class="btn btn-secondary btn-full">閉じる / Close</button>
             </div>
         </div>
     </div>
@@ -353,6 +420,7 @@
             </div>
         </div>
     </div>
+
 
     <!-- Battle Modal (v0.9 Strategic) -->
     <div id="battleModal" class="modal-overlay">

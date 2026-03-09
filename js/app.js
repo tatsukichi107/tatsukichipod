@@ -90,15 +90,6 @@
         setTimeout(function () { t.remove(); }, 1400);
     }
 
-    function showNoticeModal(title, msg) {
-        $("noticeModalTitle").textContent = title;
-        $("noticeModalMsg").textContent = msg;
-        $("noticeModal").classList.add("show");
-    }
-
-    function hideNoticeModal() {
-        $("noticeModal").classList.remove("show");
-    }
 
     function showConfirmModal(title, msg, onYes) {
         $("confirmModalTitle").textContent = title;
@@ -182,13 +173,22 @@
     /* =========================================================
      *  Legendz Preview (Enlarged)
      * ========================================================= */
-    function showLdzPreview() {
-        var mon = getMonster();
+    function showLdzPreview(spId) {
+        var mon = null;
+        if (typeof spId === "string" && window.TSP_LEGENDZ_DATA[spId]) {
+            mon = window.TSP_LEGENDZ_DATA[spId];
+        } else {
+            mon = getMonster();
+        }
         if (!mon) return;
+
         var sprite = $("ldzPreviewSprite");
         sprite.style.backgroundImage = "url('" + mon.spritePath + "')";
         sprite.style.backgroundSize = "144px 96px";
-        var rc = frameToRC(ldzWalkFrame);
+
+        // If viewing current monster, use its current frame, else use static frame 1
+        var frame = (mon === getMonster()) ? ldzWalkFrame : 1;
+        var rc = frameToRC(frame);
         sprite.style.backgroundPosition = (-rc.c * 36) + "px " + (-rc.r * 48) + "px";
 
         // Show species name (Bilingual)
@@ -202,6 +202,16 @@
 
     function hideLdzPreview() {
         $("ldzPreviewModal").classList.remove("show");
+    }
+
+    function showNoticeModal(title, msg) {
+        if ($("noticeModalTitle")) $("noticeModalTitle").innerHTML = title;
+        if ($("noticeModalBody")) $("noticeModalBody").innerHTML = msg;
+        $("noticeModal").classList.add("show");
+    }
+
+    function hideNoticeModal() {
+        $("noticeModal").classList.remove("show");
     }
 
     /* =========================================================
@@ -342,6 +352,8 @@
         $("mainView").style.display = "none";
         $("headerInfo").style.display = "none";
         $("btnComeback").style.display = "none";
+        var tabNav = $("tabNav");
+        if (tabNav) tabNav.style.display = "none";
 
         // Restore Saga Name from cache
         var savedSaga = localStorage.getItem(LS_SAGA_KEY);
@@ -358,6 +370,8 @@
         $("mainView").style.display = "flex";
         $("headerInfo").style.display = "block";
         $("btnComeback").style.display = "block";
+        var tabNav = $("tabNav");
+        if (tabNav) tabNav.style.display = "flex";
 
         // Save Saga Name to cache
         var sagaName = ($("inputSagaName").value || "").trim();
@@ -399,6 +413,20 @@
             refreshCrystalTab();
         } else if (tab === "env") {
             refreshEnvTab();
+        } else if (tab === "lab") {
+            // Auto-close accordions when returning to Lab tab
+            var sections = ["archive", "rein", "chall"];
+            for (var k = 0; k < sections.length; k++) {
+                var body = document.getElementById(sections[k] + "Body");
+                var icon = document.getElementById(sections[k] + "ToggleIcon");
+                if (body && !body.classList.contains("collapsed")) {
+                    body.classList.add("collapsed");
+                }
+                if (icon) {
+                    icon.style.transform = "rotate(-90deg)"; // Default pointing right/collapsed
+                }
+            }
+            refreshLabTab();
         }
     }
 
@@ -1110,6 +1138,109 @@
             }
         });
     }
+    /* =========================================================
+     *  Lab Tab (v1.05) – Legendz Archive
+     * ========================================================= */
+    var archiveSpriteAccum = 0;
+    var archiveSpriteFrame = 0;
+
+    function toggleSection(prefix) {
+        var body = $(prefix + "Body");
+        var icon = $(prefix + "ToggleIcon");
+        if (body && icon) {
+            body.classList.toggle("collapsed");
+            if (body.classList.contains("collapsed")) {
+                icon.style.transform = "rotate(-90deg)";
+            } else {
+                icon.style.transform = "rotate(0deg)";
+            }
+        }
+    }
+
+    function refreshLabTab() {
+        if (!soul) return;
+
+        var archiveGrid = $("archiveGrid");
+        if (!archiveGrid) return;
+        archiveGrid.innerHTML = "";
+
+        var unlocked = soul.unlockedLegendz || [];
+        // Always include current species
+        if (unlocked.indexOf(soul.speciesId) === -1) {
+            unlocked.push(soul.speciesId);
+            soul.unlockedLegendz = unlocked;
+        }
+
+        var allLegendzKeys = Object.keys(window.TSP_LEGENDZ_DATA || {});
+
+        allLegendzKeys.forEach(function (key) {
+            var ld = window.TSP_LEGENDZ_DATA[key];
+            var isUnlocked = unlocked.indexOf(key) !== -1;
+
+            var item = document.createElement("div");
+            item.className = "archive-item";
+
+            if (isUnlocked) {
+                var spriteBox = document.createElement("div");
+                spriteBox.className = "archive-sprite";
+                spriteBox.setAttribute("data-species", key);
+                spriteBox.style.backgroundImage = "url('" + ld.spritePath + "')";
+                spriteBox.style.backgroundPosition = "-36px 0";
+                item.appendChild(spriteBox);
+
+                var nameEl = document.createElement("div");
+                nameEl.className = "archive-name";
+                nameEl.textContent = ld.speciesName;
+                item.appendChild(nameEl);
+
+                var nameEnEl = document.createElement("div");
+                nameEnEl.className = "archive-name-en";
+                nameEnEl.textContent = ld.speciesNameEn;
+                item.appendChild(nameEnEl);
+
+                // Add tap event for detail preview
+                item.style.cursor = "pointer";
+                item.onclick = function () {
+                    showLdzPreview(key);
+                };
+            } else {
+                item.classList.add("locked");
+
+                var lockedBox = document.createElement("div");
+                lockedBox.className = "archive-sprite archive-locked-sprite";
+                lockedBox.textContent = "NOW PRINTING";
+                item.appendChild(lockedBox);
+
+                var qName = document.createElement("div");
+                qName.className = "archive-name";
+                qName.textContent = "？？？";
+                item.appendChild(qName);
+            }
+
+            archiveGrid.appendChild(item);
+        });
+
+        archiveSpriteAccum = 0;
+        archiveSpriteFrame = 0;
+    }
+
+    var ARCHIVE_WALK_CYCLE = [0, 1, 2, 1];
+
+    function tickArchiveSprites(dtSec) {
+        archiveSpriteAccum += dtSec;
+        if (archiveSpriteAccum >= 0.5) { // Halve the speed (was 0.25)
+            archiveSpriteAccum -= 0.5;
+            archiveSpriteFrame = (archiveSpriteFrame + 1) % ARCHIVE_WALK_CYCLE.length;
+
+            var frame = ARCHIVE_WALK_CYCLE[archiveSpriteFrame];
+            var xOff = -(frame * 36);
+
+            var sprites = document.querySelectorAll(".archive-sprite[data-species]");
+            for (var i = 0; i < sprites.length; i++) {
+                sprites[i].style.backgroundPosition = xOff + "px 0";
+            }
+        }
+    }
 
     /* =========================================================
      *  rafLoop
@@ -1142,12 +1273,15 @@
 
                 // Forced Battle Trigger every 3 status ups
                 if (minuteCounter % 3 === 0 && minuteCounter > 0) {
-                    if (encounterSilenceSec <= 0) {
+                    var mon = getMonster();
+                    var rc = TSP_GAME.computeRank(mon, envApplied, new Date(), soul.attribute);
+
+                    // Neutral environments are safe zones
+                    if (rc.envAttr === "neutral") {
+                        showToast("🌱 平穏な空気が流れている... (エンカウントなし)");
+                    } else if (encounterSilenceSec <= 0) {
                         showAdventureOverlay(function () {
                             if (window.TSP_BATTLE) {
-                                // 現在の環境属性を正しく計算して敵を選択
-                                var mon = getMonster();
-                                var rc = TSP_GAME.computeRank(mon, envApplied, new Date(), soul.attribute);
                                 var eid = getEnemyIdForEnv(rc.envAttr);
                                 window.TSP_BATTLE.start(soul, eid);
                             }
@@ -1165,6 +1299,8 @@
             renderByCurrentEnv(0);
         } else if (soul && activeTab === "legendz") {
             tickLegendzSprite(dtSec);
+        } else if (soul && activeTab === "lab") {
+            tickArchiveSprites(dtSec);
         }
 
         requestAnimationFrame(rafLoop);
@@ -1486,7 +1622,7 @@
         spriteEl = $("sprite");
 
         // Tab buttons
-        var tabNames = ["home", "env", "legendz", "crystal"];
+        var tabNames = ["home", "env", "legendz", "crystal", "lab"];
         for (var i = 0; i < tabNames.length; i++) {
             (function (tn) {
                 $("tabBtn-" + tn).addEventListener("click", function () {
@@ -1513,8 +1649,8 @@
             refreshStatsUI();
         });
 
-        // Notice modal
-        $("noticeModalOk").addEventListener("click", hideNoticeModal);
+        // Notice modal (legacy OK button if exists)
+        if ($("noticeModalOk")) $("noticeModalOk").addEventListener("click", hideNoticeModal);
 
         // Env sliders
         $("tempSlider").max = TSP_GAME.TEMP_STEPS.length - 1;
@@ -1552,6 +1688,10 @@
         $("btnLdzPreviewClose").addEventListener("click", hideLdzPreview);
         $("ldzPreviewClose").addEventListener("click", hideLdzPreview);
 
+        // Notice Modal Close (New unified)
+        if ($("btnNoticeModalClose")) $("btnNoticeModalClose").addEventListener("click", hideNoticeModal);
+        if ($("noticeModalCloseArea")) $("noticeModalCloseArea").addEventListener("click", hideNoticeModal);
+
         // Crystal Actions
         $("btnCaCancel").addEventListener("click", hideCrystalActionModal);
         $("btnCaView").addEventListener("click", hideCrystalActionModal); // For now just close
@@ -1578,6 +1718,9 @@
         gainSpecificCrystal: gainSpecificCrystal,
         neutralizeEnvironment: applyNeutralEnvironment,
         refreshHeader: refreshHeader,
+        toggleSection: toggleSection,
+        showLdzPreview: showLdzPreview,
+        showNoticeModal: showNoticeModal,
         resetTimer: function () { secondsAccum = 0; },
         saveAndRefresh: function () {
             saveGame();

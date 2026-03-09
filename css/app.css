@@ -1964,3 +1964,163 @@ input[type="range"]::-webkit-slider-thumb:hover {
   background: rgba(0, 0, 0, 0.6);
   border-color: var(--accent);
 }
+
+/* =========================================================
+ *  Laboratory (Lab Tab)
+ * ========================================================= */
+.lab-section {
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.lab-sub-title {
+  font-weight: 800;
+  font-size: 1.05rem;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 4px;
+}
+
+.lab-desc {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+  margin-bottom: 12px;
+}
+
+/* Reincarnation List */
+.reincarnation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.rein-option {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 10px;
+  border-radius: 6px;
+}
+
+/* Legendz Archive Section (Collapsible & Sticky) */
+.archive-section {
+  position: relative;
+  padding: 0;
+  /* Override padding since we want header to be flush */
+  background: transparent;
+  border: none;
+}
+
+.archive-header {
+  position: sticky;
+  top: 0;
+  background: var(--card);
+  /* Match modal/game background */
+  z-index: 20;
+  padding: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+  margin-bottom: 8px;
+}
+
+.archive-header-title {
+  font-weight: 800;
+  color: var(--accent);
+  font-size: 0.95rem;
+  letter-spacing: 1px;
+}
+
+.archive-toggle-icon {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  transition: transform 0.3s ease;
+}
+
+.archive-body {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 8px;
+  padding: 12px;
+  display: block;
+  /* Default open */
+  transition: max-height 0.3s ease, padding 0.3s ease, opacity 0.3s ease;
+  overflow: hidden;
+}
+
+.archive-body.collapsed {
+  display: none;
+}
+
+/* Legendz Archive Grid */
+.archive-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  gap: 10px;
+}
+
+.archive-item {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  padding: 10px 6px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  transition: var(--transition);
+}
+
+.archive-item:not(.locked):hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--accent);
+}
+
+.archive-item.locked {
+  opacity: 0.4;
+  filter: grayscale(100%);
+}
+
+.archive-sprite {
+  width: 36px;
+  height: 48px;
+  background-size: 144px 96px;
+  background-position: -36px 0;
+  image-rendering: pixelated;
+  margin-bottom: 6px;
+}
+
+.archive-locked-sprite {
+  background: none !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.5rem;
+  font-weight: 800;
+  color: #666;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.archive-name {
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  line-height: 1.2;
+  word-break: break-all;
+}
+
+.archive-name-en {
+  font-size: 0.55rem;
+  font-weight: 400;
+  color: var(--text-muted);
+  line-height: 1.1;
+}

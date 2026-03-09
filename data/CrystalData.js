@@ -9,7 +9,7 @@
 
         /* ===== COST ===== */
         "crystal_cost": {
-            id: "crystal_cost",
+            id: "crystal_cost", shortId: "0",
             group: "cost",
             name: "コストクリスタル",
             nameEn: "Cost Crystal",
@@ -29,7 +29,7 @@
 
         /* ===== Volcano (Magic) ===== */
         "fragment_salamander": {
-            id: "fragment_salamander", group: "volcano",
+            id: "fragment_salamander", shortId: "1", group: "volcano",
             name: "サラマンダーのカケラ", nameEn: "Salamander Fragment",
             attribute: "volcano", rarity: "common", skillId: "skill_salamander",
             desc: "火の精霊の力が宿ったカケラ。マホウの力を高める。",
@@ -42,7 +42,7 @@
             }
         },
         "fragment_willowisp": {
-            id: "fragment_willowisp", group: "volcano",
+            id: "fragment_willowisp", shortId: "2", group: "volcano",
             name: "ウィルオーウィスプのカケラ", nameEn: "Will-o'-the-wisp Fragment",
             attribute: "volcano", rarity: "common", skillId: "skill_willowisp",
             desc: "浮遊する怪火のカケラ。マホウの力をさらに高める。",
@@ -55,7 +55,7 @@
             }
         },
         "fragment_wyvern": {
-            id: "fragment_wyvern", group: "volcano",
+            id: "fragment_wyvern", shortId: "3", group: "volcano",
             name: "ワイバーンのカケラ", nameEn: "Wyvern Fragment",
             attribute: "volcano", rarity: "rare", skillId: "skill_wyvern",
             desc: "飛竜の翼のカケラ。強力な魔力が宿っている。",
@@ -68,7 +68,7 @@
             }
         },
         "fragment_blazedragon": {
-            id: "fragment_blazedragon", group: "volcano",
+            id: "fragment_blazedragon", shortId: "4", group: "volcano",
             name: "ブレイズドラゴンのカケラ", nameEn: "Blaze Dragon Fragment",
             attribute: "volcano", rarity: "rare", skillId: "skill_blazedragon",
             desc: "炎を統べる龍のカケラ。マホウの極致へ近づける。",
@@ -81,7 +81,7 @@
             }
         },
         "fragment_volcanoking": {
-            id: "fragment_volcanoking", group: "volcano",
+            id: "fragment_volcanoking", shortId: "5", group: "volcano",
             name: "ヴォルケーノキングドラゴンのカケラ", nameEn: "Volcano King Fragment",
             attribute: "volcano", rarity: "epic", skillId: "skill_volcanoking",
             desc: "伝説の火龍王のカケラ。究極のマホウを授ける。",
@@ -96,7 +96,7 @@
 
         /* ===== Tornado (Counter) ===== */
         "fragment_harpy": {
-            id: "fragment_harpy", group: "tornado",
+            id: "fragment_harpy", shortId: "6", group: "tornado",
             name: "ハーピーのカケラ", nameEn: "Harpy Fragment",
             attribute: "tornado", rarity: "common", skillId: "skill_harpy",
             desc: "翼を持つ乙女のカケラ。カウンターの精度を上げる。",
@@ -109,7 +109,7 @@
             }
         },
         "fragment_hippogriff": {
-            id: "fragment_hippogriff", group: "tornado",
+            id: "fragment_hippogriff", shortId: "7", group: "tornado",
             name: "ヒポグリフのカケラ", nameEn: "Hippogriff Fragment",
             attribute: "tornado", rarity: "common", skillId: "skill_hippogriff",
             desc: "半鳥半獣のカケラ。カウンターの威力を高める。",
@@ -122,7 +122,7 @@
             }
         },
         "fragment_manticore": {
-            id: "fragment_manticore", group: "tornado",
+            id: "fragment_manticore", shortId: "8", group: "tornado",
             name: "マンティコアのカケラ", nameEn: "Manticore Fragment",
             attribute: "tornado", rarity: "rare", skillId: "skill_manticore",
             desc: "毒尾を持つ獣のカケラ。鋭い反撃を可能にする。",
@@ -135,7 +135,7 @@
             }
         },
         "fragment_assassinbug": {
-            id: "fragment_assassinbug", group: "tornado",
+            id: "fragment_assassinbug", shortId: "9", group: "tornado",
             name: "アサシンバグのカケラ", nameEn: "Assassin Bug Fragment",
             attribute: "tornado", rarity: "rare", skillId: "skill_assassinbug",
             desc: "奇襲を得意とする虫のカケラ。回避と反撃を強化する。",
@@ -148,7 +148,7 @@
             }
         },
         "fragment_tornadoking": {
-            id: "fragment_tornadoking", group: "tornado",
+            id: "fragment_tornadoking", shortId: "a", group: "tornado",
             name: "トルネードキングドラゴンのカケラ", nameEn: "Tornado King Fragment",
             attribute: "tornado", rarity: "epic", skillId: "skill_tornadoking",
             desc: "嵐を支配する龍王のカケラ。究極の反撃力を授ける。",
@@ -163,7 +163,7 @@
 
         /* ===== Earthquake (Attack) ===== */
         "fragment_lizardman": {
-            id: "fragment_lizardman", group: "earthquake",
+            id: "fragment_lizardman", shortId: "b", group: "earthquake",
             name: "リザードマンのカケラ", nameEn: "Lizardman Fragment",
             attribute: "earthquake", rarity: "common", skillId: "skill_lizardman",
             desc: "トカゲの戦士のカケラ。物理的な破壊力を高める。",
@@ -176,7 +176,7 @@
             }
         },
         "fragment_caitsith": {
-            id: "fragment_caitsith", group: "earthquake",
+            id: "fragment_caitsith", shortId: "c", group: "earthquake",
             name: "ケットシーのカケラ", nameEn: "Cait Sith Fragment",
             attribute: "earthquake", rarity: "common", skillId: "skill_caitsith",
             desc: "妖精猫のカケラ。ダゲキの威力をさらに高める。",
@@ -189,7 +189,7 @@
             }
         },
         "fragment_dwarf": {
-            id: "fragment_dwarf", group: "earthquake",
+            id: "fragment_dwarf", shortId: "d", group: "earthquake",
             name: "ドワーフのカケラ", nameEn: "Dwarf Fragment",
             attribute: "earthquake", rarity: "rare", skillId: "skill_dwarf",
             desc: "頑強な戦士のカケラ。重い一撃を可能にする。",
@@ -202,7 +202,7 @@
             }
         },
         "fragment_orc": {
-            id: "fragment_orc", group: "earthquake",
+            id: "fragment_orc", shortId: "e", group: "earthquake",
             name: "オーガのカケラ", nameEn: "Ogre Fragment",
             attribute: "earthquake", rarity: "rare", skillId: "skill_orc",
             desc: "猪突猛進する獣人のカケラ。ダゲキを極める力を宿す。",
@@ -215,7 +215,7 @@
             }
         },
         "fragment_earthquakeking": {
-            id: "fragment_earthquakeking", group: "earthquake",
+            id: "fragment_earthquakeking", shortId: "f", group: "earthquake",
             name: "アースクエイクキングドラゴンのカケラ", nameEn: "Earthquake King Fragment",
             attribute: "earthquake", rarity: "epic", skillId: "skill_earthquakeking",
             desc: "地響きと共に現れる龍王のカケラ。究極のダゲキ力を授ける。",
@@ -230,7 +230,7 @@
 
         /* ===== Storm (Recover) ===== */
         "fragment_stormworm": {
-            id: "fragment_stormworm", group: "storm",
+            id: "fragment_stormworm", shortId: "g", group: "storm",
             name: "ストームワームのカケラ", nameEn: "Storm Worm Fragment",
             attribute: "storm", rarity: "common", skillId: "skill_stormworm",
             desc: "嵐を好む虫のカケラ。生命の再生を助ける。",
@@ -243,7 +243,7 @@
             }
         },
         "fragment_giantcrab": {
-            id: "fragment_giantcrab", group: "storm",
+            id: "fragment_giantcrab", shortId: "h", group: "storm",
             name: "ジャイアントクラブのカケラ", nameEn: "Giant Crab Fragment",
             attribute: "storm", rarity: "common", skillId: "skill_giantcrab",
             desc: "巨大な甲羅を持つ蟹のカケラ。カイフク力を高める。",
@@ -256,7 +256,7 @@
             }
         },
         "fragment_mazeoctopus": {
-            id: "fragment_mazeoctopus", group: "storm",
+            id: "fragment_mazeoctopus", shortId: "i", group: "storm",
             name: "メイズオクトパスのカケラ", nameEn: "Maze Octopus Fragment",
             attribute: "storm", rarity: "rare", skillId: "skill_mazeoctopus",
             desc: "迷宮に潜むタコのカケラ。癒やしの効率を高める。",
@@ -269,7 +269,7 @@
             }
         },
         "fragment_undine": {
-            id: "fragment_undine", group: "storm",
+            id: "fragment_undine", shortId: "j", group: "storm",
             name: "ウンディーネのカケラ", nameEn: "Undine Fragment",
             attribute: "storm", rarity: "rare", skillId: "skill_undine",
             desc: "水の精霊のカケラ。カイフクを極める力を宿す。",
@@ -282,7 +282,7 @@
             }
         },
         "fragment_stormking": {
-            id: "fragment_stormking", group: "storm",
+            id: "fragment_stormking", shortId: "k", group: "storm",
             name: "ストームキングドラゴンのカケラ", nameEn: "Storm King Fragment",
             attribute: "storm", rarity: "epic", skillId: "skill_stormking",
             desc: "大海を統べる龍王のカケラ。究極のカイフク力を授ける。",
@@ -297,7 +297,7 @@
 
         /* ===== Legendary Souls ===== */
         "soul_volcano": {
-            id: "soul_volcano", group: "soul",
+            id: "soul_volcano", shortId: "l", group: "soul",
             name: "ヴォルケーノソウル", nameEn: "Volcano Soul",
             attribute: "volcano", rarity: "epic",
             desc: "ヴォルケーノキングドラゴンを倒した証。持っているとサーチしても二度と現れない。",
@@ -307,7 +307,7 @@
         },
         /* ===== King Fragments (Teach Skills) ===== */
         "fragment_volcanoking": {
-            id: "fragment_volcanoking", group: "volcano",
+            id: "fragment_volcanoking", shortId: "5", group: "volcano",
             name: "ヴォルケーノキングドラゴンのカケラ", nameEn: "Volcano King Fragment",
             attribute: "volcano", rarity: "epic", skillId: "skill_volcanoking",
             desc: "炎の王の魂が宿るカケラ。最高位の火炎操作を可能にする。",
@@ -320,7 +320,7 @@
             }
         },
         "fragment_tornadoking": {
-            id: "fragment_tornadoking", group: "tornado",
+            id: "fragment_tornadoking", shortId: "a", group: "tornado",
             name: "トルネードキングドラゴンのカケラ", nameEn: "Tornado King Fragment",
             attribute: "tornado", rarity: "epic", skillId: "skill_tornadoking",
             desc: "風の王の魂が宿るカケラ。天を衝く竜巻を操る。",
@@ -333,7 +333,7 @@
             }
         },
         "fragment_earthquakeking": {
-            id: "fragment_earthquakeking", group: "earthquake",
+            id: "fragment_earthquakeking", shortId: "f", group: "earthquake",
             name: "アースクエイクキングドラゴンのカケラ", nameEn: "Earthquake King Fragment",
             attribute: "earthquake", rarity: "epic", skillId: "skill_earthquakeking",
             desc: "地の王の魂が宿るカケラ。大地そのものを揺るがす。",
@@ -346,7 +346,7 @@
             }
         },
         "fragment_stormking": {
-            id: "fragment_stormking", group: "storm",
+            id: "fragment_stormking", shortId: "k", group: "storm",
             name: "ストームキングドラゴンのカケラ", nameEn: "Storm King Fragment",
             attribute: "storm", rarity: "epic", skillId: "skill_stormking",
             desc: "水の王の魂が宿るカケラ。聖なる奔流で全てを癒やす。",
@@ -359,7 +359,7 @@
             }
         },
         "soul_tornado": {
-            id: "soul_tornado", group: "soul",
+            id: "soul_tornado", shortId: "m", group: "soul",
             name: "トルネードソウル", nameEn: "Tornado Soul",
             attribute: "tornado", rarity: "epic",
             desc: "トルネードキングドラゴンを倒した証。持っているとサーチしても二度と現れない。",
@@ -368,7 +368,7 @@
             applyEffect: null
         },
         "soul_earthquake": {
-            id: "soul_earthquake", group: "soul",
+            id: "soul_earthquake", shortId: "n", group: "soul",
             name: "アースクエイクソウル", nameEn: "Earthquake Soul",
             attribute: "earthquake", rarity: "epic",
             desc: "アースクエイクキングドラゴンを倒した証。持っているとサーチしても二度と現れない。",
@@ -377,7 +377,7 @@
             applyEffect: null
         },
         "soul_storm": {
-            id: "soul_storm", group: "soul",
+            id: "soul_storm", shortId: "o", group: "soul",
             name: "ストームソウル", nameEn: "Storm Soul",
             attribute: "storm", rarity: "epic",
             desc: "ストームキングドラゴンを倒した証。持っているとサーチしても二度と現れない。",
@@ -386,7 +386,7 @@
             applyEffect: null
         },
         "crystal_king": {
-            id: "crystal_king", group: "soul",
+            id: "crystal_king", shortId: "p", group: "soul",
             name: "おうじゃのクリスタル", nameEn: "King Crystal",
             attribute: "neutral", rarity: "unique",
             desc: "ジャバウォックを倒した証。真の強者の象徴。",
