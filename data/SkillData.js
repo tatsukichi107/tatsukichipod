@@ -48,6 +48,11 @@
         "skill_stormking_base": { id: "skill_stormking_base", shortId: "r", name: "セラフィックギュルド", nameEn: "Seraphic Guild", attribute: "storm", category: "heal", power: 360, desc: "全てを浄化する聖なる雫。" },
         "skill_mermaid_ult": { id: "skill_mermaid_ult", shortId: "s", name: "レインキュア", nameEn: "Rain Cure", attribute: "storm", category: "heal", power: 300, desc: "マーメイドの必殺技。" },
 
+        "skill_devourcrocodile_ult": { id: "skill_devourcrocodile_ult", shortId: "u", name: "デヴォアキュアリム", nameEn: "Devour Curim", attribute: "storm", category: "attack", power: 250, desc: "デヴォアクロコダイルの必殺技。" },
+        "skill_harpy_ult": { id: "skill_harpy_ult", shortId: "v", name: "ブリス", nameEn: "Bliss EX", attribute: "tornado", category: "attack", power: 250, desc: "ハーピーの必殺技。" },
+        "skill_caitsith_ult": { id: "skill_caitsith_ult", shortId: "w", name: "スタンプブロウガ", nameEn: "Stamp Browga EX", attribute: "earthquake", category: "attack", power: 220, desc: "ケットシーの必殺技。" },
+        "skill_hellhound_ult": { id: "skill_hellhound_ult", shortId: "x", name: "スピンフレイド", nameEn: "Spin Flade", attribute: "volcano", category: "attack", power: 250, desc: "ヘルハウンドの必殺技。" },
+
         "skill_jabberwock": { id: "skill_jabberwock", shortId: "t", name: "ヴェノム", nameEn: "Venom", attribute: "necrom", category: "attack", power: 450, desc: "全てを腐食させる終焉の毒。" }
     };
 })();

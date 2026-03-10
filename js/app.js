@@ -92,8 +92,8 @@
 
 
     function showConfirmModal(title, msg, onYes) {
-        $("confirmModalTitle").textContent = title;
-        $("confirmModalMsg").textContent = msg;
+        $("confirmModalTitle").innerHTML = title;
+        $("confirmModalMsg").innerHTML = msg;
         $("confirmModal").classList.add("show");
         $("confirmYes").onclick = function () {
             $("confirmModal").classList.remove("show");
@@ -1099,6 +1099,16 @@
                 return cd && cd.group === groupKey;
             });
 
+            groupCrystals.sort(function(a, b) {
+                var cdA = window.TSP_CRYSTAL_DATA[a];
+                var cdB = window.TSP_CRYSTAL_DATA[b];
+                var idA = cdA ? cdA.shortId : "";
+                var idB = cdB ? cdB.shortId : "";
+                if (idA < idB) return -1;
+                if (idA > idB) return 1;
+                return 0;
+            });
+
             if (groupCrystals.length > 0) {
                 var groupEl = document.createElement("div");
                 groupEl.className = "crystal-group";
@@ -1139,7 +1149,7 @@
         });
     }
     /* =========================================================
-     *  Lab Tab (v1.05) – Legendz Archive
+     *  Lab Tab (v1.10) – Legendz Archive
      * ========================================================= */
     var archiveSpriteAccum = 0;
     var archiveSpriteFrame = 0;
@@ -1175,6 +1185,8 @@
 
         allLegendzKeys.forEach(function (key) {
             var ld = window.TSP_LEGENDZ_DATA[key];
+            if (ld.isSecret) return; // Skip secret Legendz like Ranshiin from archive
+
             var isUnlocked = unlocked.indexOf(key) !== -1;
 
             var item = document.createElement("div");
@@ -1222,6 +1234,11 @@
 
         archiveSpriteAccum = 0;
         archiveSpriteFrame = 0;
+
+        // Populate Reincarnation List
+        if (window.TSP_REINCARNATION) {
+            window.TSP_REINCARNATION.buildReinListHTML(soul, "reinListContainer");
+        }
     }
 
     var ARCHIVE_WALK_CYCLE = [0, 1, 2, 1];
@@ -1687,6 +1704,15 @@
         $("ldzSpritePreview").addEventListener("click", showLdzPreview);
         $("btnLdzPreviewClose").addEventListener("click", hideLdzPreview);
         $("ldzPreviewClose").addEventListener("click", hideLdzPreview);
+        
+        // Prevent clicks inside the modal body from closing it
+        var previewModalBox = $("ldzPreviewModal").querySelector(".preview-modal");
+        if (previewModalBox) {
+            previewModalBox.addEventListener("click", function(e) {
+                e.stopPropagation();
+            });
+        }
+
 
         // Notice Modal Close (New unified)
         if ($("btnNoticeModalClose")) $("btnNoticeModalClose").addEventListener("click", hideNoticeModal);
@@ -1721,6 +1747,9 @@
         toggleSection: toggleSection,
         showLdzPreview: showLdzPreview,
         showNoticeModal: showNoticeModal,
+        showConfirmModal: showConfirmModal,
+        showToast: showToast,
+        switchTab: switchTab,
         resetTimer: function () { secondsAccum = 0; },
         saveAndRefresh: function () {
             saveGame();

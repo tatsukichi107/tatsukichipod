@@ -97,7 +97,11 @@
             /* 1 */ "ranshiin",
             /* 2 */ "blazedragon",
             /* 3 */ "werewolf",
-            /* 4 */ "mermaid"
+            /* 4 */ "mermaid",
+            /* 5 */ "devourcrocodile",
+            /* 6 */ "harpy",
+            /* 7 */ "caitsith",
+            /* 8 */ "hellhound"
         ],
         skills: [
             /* 0  */ "skill_basic_slap",
@@ -129,7 +133,11 @@
             /* q  */ "skill_stormking",
             /* r  */ "skill_stormking_base",
             /* s  */ "skill_mermaid_ult",
-            /* t  */ "skill_jabberwock"
+            /* t  */ "skill_jabberwock",
+            /* u  */ "skill_devourcrocodile_ult",
+            /* v  */ "skill_harpy_ult",
+            /* w  */ "skill_caitsith_ult",
+            /* x  */ "skill_hellhound_ult"
         ],
         crystals: [
             /* 0  */ "crystal_cost",

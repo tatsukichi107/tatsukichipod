@@ -15,6 +15,8 @@
 </head>
 
 <body>
+    <!-- Reincarnation Whiteout Effect -->
+    <div id="reinEffectOverlay"></div>
 
     <div id="app">
 
@@ -23,11 +25,12 @@
             <div class="header-top">
                 <div>
                     <span class="header-logo">TalisPod</span>
-                    <span class="header-version">v1.05</span>
+                    <span class="header-version">v1.10</span>
                 </div>
                 <button id="btnComeback" class="btn-comeback">💎 Comeback</button>
             </div>
             <div id="headerInfo" class="header-info" style="display:none;">
+                <div class="header-v">v1.10</div>
                 <div class="header-stats-row">
                     <span>Saga:</span> <span id="headerSaga">—</span> |
                     <span id="headerSpeciesFull">—</span>
@@ -279,10 +282,7 @@
                                         *Stats and skills will be reset, but items/fragments will be preserved.
                                     </span>
                                 </div>
-                                <button class="btn btn-full btn-secondary"
-                                    onclick="window.TSP_APP_UTIL.showNoticeModal('転生 / Reincarnation', '今後のアップデートで実装予定です。<br><br>Coming soon in a future update.')">
-                                    🔄 転生する / Reincarnate
-                                </button>
+                                <div id="reinListContainer"></div>
                             </div>
                         </div>
 
@@ -530,6 +530,7 @@
     <script src="./js/spriteGen.js"></script>
     <script src="./js/game.js"></script>
     <script src="./js/battle.js"></script>
+    <script src="./js/reincarnation.js"></script>
     <script src="./js/app.js"></script>
 
 </body>

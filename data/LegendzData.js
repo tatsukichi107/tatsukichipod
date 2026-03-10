@@ -22,7 +22,9 @@
             defaultMoves: ["skill_wing_tornado", "skill_basic_slap", "skill_salamander", "skill_basic_slap", "skill_lizardman",
                 "skill_basic_slap", "skill_stormworm", "skill_basic_slap", "skill_basic_slap", "skill_basic_slap",
                 "skill_basic_slap", "skill_basic_slap", "skill_basic_slap", "skill_basic_slap", "skill_basic_slap"],
-            desc: "吹雪舞う寒い山に住むレジェンズ。翼で大風を起こすと、木々は倒れ、海は二つに割れるという。\n(A Legend who lives in cold, snowy mountains. It is said that when it creates a great wind with its wings, trees fall and the sea splits in two.)"
+            desc: "吹雪舞う寒い山に住むレジェンズ。翼で大風を起こすと、木々は倒れ、海は二つに割れるという。\n(A Legend who lives in cold, snowy mountains. It is said that when it creates a great wind with its wings, trees fall and the sea splits in two.)",
+            reinCost: [{ crystalId: "fragment_assassinbug", qty: 3 }],
+            isSecret: false
         },
         /* === Mysterious Windragon === */
         "ranshiin": {
@@ -40,7 +42,9 @@
             defaultMoves: ["skill_basic_slap", "skill_basic_slap", "skill_basic_slap", "skill_basic_slap", "skill_basic_slap",
                 "skill_basic_slap", "skill_basic_slap", "skill_basic_slap", "skill_basic_slap", "skill_basic_slap",
                 "skill_basic_slap", "skill_basic_slap", "skill_basic_slap", "skill_basic_slap", "skill_wing_tornado"],
-            desc: "体は黒色で金髪を束ねている謎のウインドラゴン。\n(A mysterious Windragon with a black body and tied-up blonde hair.)"
+            desc: "体は黒色で金髪を束ねている謎のウインドラゴン。\n(A mysterious Windragon with a black body and tied-up blonde hair.)",
+            reinCost: null,
+            isSecret: true
         },
         /* === Player Custom Legendz === */
         "blazedragon": {
@@ -54,11 +58,13 @@
             maxGrowHP: 5110,
             maxGrowStats: { magic: 630, counter: 630, attack: 630, recover: 630 },
             superBest: { temp: 35, hum: 5 },
-            bestAreaId: "V1",
+            bestAreaId: "V3",
             defaultMoves: ["skill_blazedragon_ult", "skill_basic_slap", "skill_salamander", "skill_basic_slap", "skill_lizardman",
                 "skill_basic_slap", "skill_stormworm", "skill_basic_slap", "skill_basic_slap", "skill_basic_slap",
                 "skill_basic_slap", "skill_basic_slap", "skill_basic_slap", "skill_basic_slap", "skill_basic_slap"],
-            desc: "灼熱の炎を操るドラゴン。"
+            desc: "灼熱の炎を操るドラゴン。",
+            reinCost: [{ crystalId: "fragment_blazedragon", qty: 3 }],
+            isSecret: false
         },
         "werewolf": {
             speciesId: "werewolf", shortId: "3",
@@ -71,11 +77,13 @@
             maxGrowHP: 5110,
             maxGrowStats: { magic: 630, counter: 630, attack: 630, recover: 630 },
             superBest: { temp: 20, hum: 65 },
-            bestAreaId: "E2",
+            bestAreaId: "E4",
             defaultMoves: ["skill_werewolf_ult", "skill_basic_slap", "skill_salamander", "skill_basic_slap", "skill_lizardman",
                 "skill_basic_slap", "skill_stormworm", "skill_basic_slap", "skill_basic_slap", "skill_basic_slap",
                 "skill_basic_slap", "skill_basic_slap", "skill_basic_slap", "skill_basic_slap", "skill_basic_slap"],
-            desc: "大地を揺るがす剛腕を持つ狼男。"
+            desc: "大地を揺るがす剛腕を持つ狼男。",
+            reinCost: [{ crystalId: "fragment_orc", qty: 3 }],
+            isSecret: false
         },
         "mermaid": {
             speciesId: "mermaid", shortId: "4",
@@ -88,11 +96,89 @@
             maxGrowHP: 5110,
             maxGrowStats: { magic: 630, counter: 630, attack: 630, recover: 630 },
             superBest: { temp: 30, hum: 100, waterDepth: 0 },
-            bestAreaId: "S2",
+            bestAreaId: "SSS",
             defaultMoves: ["skill_mermaid_ult", "skill_basic_slap", "skill_salamander", "skill_basic_slap", "skill_lizardman",
                 "skill_basic_slap", "skill_stormworm", "skill_basic_slap", "skill_basic_slap", "skill_basic_slap",
                 "skill_basic_slap", "skill_basic_slap", "skill_basic_slap", "skill_basic_slap", "skill_basic_slap"],
-            desc: "癒しの雨を降らせる美しい人魚。"
+            desc: "癒しの雨を降らせる美しい人魚。",
+            reinCost: [{ crystalId: "fragment_undine", qty: 3 }],
+            isSecret: false
+        },
+        "devourcrocodile": {
+            speciesId: "devourcrocodile", shortId: "5",
+            speciesName: "デヴォアクロコダイル",
+            speciesNameEn: "Devour Crocodile",
+            spritePath: "./assets/sprites/devour crocodile.png",
+            attribute: "storm",
+            baseHP: 340,
+            baseStats: { magic: 70, counter: 80, attack: 50, recover: 100 },
+            maxGrowHP: 5110,
+            maxGrowStats: { magic: 630, counter: 630, attack: 630, recover: 630 },
+            superBest: { temp: -15, hum: 60 },
+            bestAreaId: "S4",
+            defaultMoves: ["skill_devourcrocodile_ult", "skill_salamander", "skill_harpy", "skill_lizardman", "skill_stormworm",
+                "skill_basic_slap", "skill_basic_slap", "skill_basic_slap", "skill_basic_slap", "skill_basic_slap",
+                "skill_basic_slap", "skill_basic_slap", "skill_basic_slap", "skill_basic_slap", "skill_basic_slap"],
+            desc: "波乗りを得意とするワニ種のレジェンズ。",
+            reinCost: [{ crystalId: "fragment_stormworm", qty: 5 }],
+            isSecret: false
+        },
+        "harpy": {
+            speciesId: "harpy", shortId: "6",
+            speciesName: "ハーピー",
+            speciesNameEn: "Harpy",
+            spritePath: "./assets/sprites/harpy.png",
+            attribute: "tornado",
+            baseHP: 450,
+            baseStats: { magic: 50, counter: 100, attack: 50, recover: 40 },
+            maxGrowHP: 5110,
+            maxGrowStats: { magic: 630, counter: 630, attack: 630, recover: 630 },
+            superBest: { temp: -25, hum: 35 },
+            bestAreaId: "T4",
+            defaultMoves: ["skill_harpy_ult", "skill_salamander", "skill_harpy", "skill_lizardman", "skill_stormworm",
+                "skill_basic_slap", "skill_basic_slap", "skill_basic_slap", "skill_basic_slap", "skill_basic_slap",
+                "skill_basic_slap", "skill_basic_slap", "skill_basic_slap", "skill_basic_slap", "skill_basic_slap"],
+            desc: "胸から上は人間の女性で胴体から下は鳥という半人半鳥のレジェンズ。",
+            reinCost: [{ crystalId: "fragment_harpy", qty: 5 }],
+            isSecret: false
+        },
+        "caitsith": {
+            speciesId: "caitsith", shortId: "7",
+            speciesName: "ケットシー",
+            speciesNameEn: "Cait Sith",
+            spritePath: "./assets/sprites/cait sith.png",
+            attribute: "earthquake",
+            baseHP: 480,
+            baseStats: { magic: 50, counter: 50, attack: 90, recover: 20 },
+            maxGrowHP: 5110,
+            maxGrowStats: { magic: 630, counter: 630, attack: 630, recover: 630 },
+            superBest: { temp: 25, hum: 90 },
+            bestAreaId: "E3",
+            defaultMoves: ["skill_caitsith_ult", "skill_salamander", "skill_harpy", "skill_lizardman", "skill_stormworm",
+                "skill_basic_slap", "skill_basic_slap", "skill_basic_slap", "skill_basic_slap", "skill_basic_slap",
+                "skill_basic_slap", "skill_basic_slap", "skill_basic_slap", "skill_basic_slap", "skill_basic_slap"],
+            desc: "二足の足で歩き高度な知能を持つ猫種のレジェンズ。",
+            reinCost: [{ crystalId: "fragment_caitsith", qty: 5 }],
+            isSecret: false
+        },
+        "hellhound": {
+            speciesId: "hellhound", shortId: "8",
+            speciesName: "ヘルハウンド",
+            speciesNameEn: "Hellhound",
+            spritePath: "./assets/sprites/hellhound.png",
+            attribute: "volcano",
+            baseHP: 360,
+            baseStats: { magic: 130, counter: 50, attack: 50, recover: 50 },
+            maxGrowHP: 5110,
+            maxGrowStats: { magic: 630, counter: 630, attack: 630, recover: 630 },
+            superBest: { temp: 15, hum: 30 },
+            bestAreaId: "V4",
+            defaultMoves: ["skill_hellhound_ult", "skill_salamander", "skill_harpy", "skill_lizardman", "skill_stormworm",
+                "skill_basic_slap", "skill_basic_slap", "skill_basic_slap", "skill_basic_slap", "skill_basic_slap",
+                "skill_basic_slap", "skill_basic_slap", "skill_basic_slap", "skill_basic_slap", "skill_basic_slap"],
+            desc: "悪魔の犬のレジェンズ。性格は獰猛で、動くものを見ると襲いかかり、鋭い牙で喉を狙う。",
+            reinCost: [{ crystalId: "fragment_salamander", qty: 5 }],
+            isSecret: false
         }
     };
 })();
